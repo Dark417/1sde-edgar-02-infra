@@ -1,0 +1,188 @@
+name: ci
+
+# `apply` is NEVER automatic — not on merge to main, not on tag. This repo can
+# delete your data; a human presses the button (AGENTS.md §8).
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "apply" to confirm you intend to change live infrastructure'
+        required: true
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write # OIDC federation to AWS
+  pull-requests: write # to comment the plan
+
+env:
+  TF_VERSION: "1.9.8"
+  AWS_REGION: us-east-1
+
+jobs:
+  static:
+    name: fmt / validate / lint / security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive
+
+      # No backend: validate must not need credentials or a state file.
+      - name: terraform init (no backend)
+        run: terraform init -backend=false
+
+      - name: terraform validate
+        run: terraform validate
+
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+
+      - name: tflint
+        run: tflint --recursive
+
+      - name: tfsec
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          soft_fail: false
+
+  gates:
+    name: forbidden-resource gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Scoped to Terraform sources, and comment lines are excluded: the repo
+      # explains in prose why each of these is forbidden, and a gate that fires
+      # on its own rationale would push the explanation out of the codebase.
+      # An inline comment after real code still matches, which is correct.
+      - name: No account-level Unity Catalog resources
+        run: |
+          hits=$(grep -rEn 'databricks_(metastore|mws_|account_)' --include='*.tf' . \
+                 | grep -vE ':[0-9]+:[[:space:]]*(#|//)' || true)
+          if [ -n "$hits" ]; then
+            echo "$hits"
+            echo "::error::Free Edition exposes no account-level API (rule 1, design doc 4.1)."
+            exit 1
+          fi
+
+      - name: No cross-repo state coupling
+        run: |
+          hits=$(grep -rEn 'terraform_remote_state' --include='*.tf' . \
+                 | grep -vE ':[0-9]+:[[:space:]]*(#|//)' || true)
+          if [ -n "$hits" ]; then
+            echo "$hits"
+            echo "::error::Use SSM parameters, not remote state (rule 2)."
+            exit 1
+          fi
+
+      - name: Tables belong to Liquibase, not Terraform
+        run: |
+          hits=$(grep -rEn 'databricks_sql_table' --include='*.tf' . \
+                 | grep -vE ':[0-9]+:[[:space:]]*(#|//)' || true)
+          if [ -n "$hits" ]; then
+            echo "$hits"
+            echo "::error::Table lifecycle is owned by repo 1 Liquibase (rule 3)."
+            exit 1
+          fi
+
+  tests:
+    name: names match contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # pip cannot read s3:// URLs, so the wheel is fetched first (AGENTS.md 9.4).
+      - name: Fetch the contracts wheel
+        run: |
+          aws s3 cp "s3://${{ vars.TF_STATE_BUCKET }}/wheels/" /tmp/wheels/ --recursive
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt --find-links /tmp/wheels/
+
+      - name: pytest
+        run: pytest tests/ -v
+
+  plan:
+    name: plan
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    needs: [static, gates, tests]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: terraform init
+        run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+
+      - name: terraform plan
+        id: plan
+        run: terraform plan -var-file=envs/dev.tfvars -no-color -out=tf.plan | tee plan.txt
+
+      # Fails the PR if the plan would destroy anything. On this project a
+      # destroy means dropping a catalog Liquibase built 13 tables inside.
+      - name: Refuse plans containing destroy actions
+        run: |
+          if grep -qE '^\s*# .* will be destroyed' plan.txt; then
+            echo "::error::Plan contains destroy actions. Review by hand before proceeding."
+            exit 1
+          fi
+
+      - name: Comment the plan
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('plan.txt', 'utf8').slice(0, 60000);
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '### terraform plan\n```\n' + body + '\n```',
+            });
+
+  apply:
+    name: apply (manual only)
+    if: github.event_name == 'workflow_dispatch' && inputs.confirm == 'apply'
+    runs-on: ubuntu-latest
+    environment: dev # requires the reviewer configured on the GitHub environment
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: terraform init
+        run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+
+      - name: terraform apply
+        run: terraform apply -var-file=envs/dev.tfvars -auto-approve

@@ -1,0 +1,8 @@
+﻿# Test-only dependencies. Nothing here is needed to run terraform.
+pytest==8.3.3
+python-hcl2==4.3.5
+
+# The contracts package is installed from the wheel built by repo 1, not from
+# PyPI. Pinned with == per global rule 1; see AGENTS.md §9.4 for the aws s3 cp
+# that fetches it, since pip cannot read s3:// URLs directly.
+edgar-lakehouse-contracts==0.1.0
