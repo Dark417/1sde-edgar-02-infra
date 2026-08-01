@@ -1,9 +1,9 @@
-# Repo 2 / 5 — `1sde-databricks-02-infra`
+# Repo 2 / 5 — `1sde-databricks-edgar-02-infra`
 
 > Copy to repo root as `AGENTS.md`. Sections 0–8 are agent instructions. Section 9 is
 > yours, by hand. Section 10 is what repos 3–5 consume.
 >
-> GitHub: `github.com/Dark417/1sde-databricks-02-infra`
+> GitHub: `github.com/Dark417/1sde-databricks-edgar-02-infra`
 > Build order position: **2 of 5.** Requires repo 1 published.
 
 ---
@@ -31,13 +31,13 @@ constraints and §6 repo layout), `02-data-contracts.md`.
 
 ### Owns
 - Terraform state backend config (bucket + DynamoDB lock created by hand, §9.1).
-- S3: `fin-lake-raw`, `fin-lake-serving`.
+- S3: `edgar-lake-raw`, `edgar-lake-serving`.
 - IAM: Terraform execution role, ECS task role, **GitHub Actions OIDC roles for all
   five repos**.
 - ECR repository for the ingest image.
 - ECS cluster + task definition + EventBridge schedule (created **disabled**).
 - CloudWatch log groups.
-- Databricks workspace-level: catalog `fin`, schemas, volume, job definitions, grants.
+- Databricks workspace-level: catalog `edgar`, schemas, volume, job definitions, grants.
 - SSM parameters that repos 3–5 read.
 
 ### Does NOT own
@@ -65,12 +65,12 @@ drops a table Liquibase thinks it still manages.
 | ADR-001 result | repo 1 `docs/` | decides whether the ingest task needs Databricks Files API egress |
 
 **Verification step, mandatory:** generate a test that reads the installed
-`fin_lakehouse_contracts` package and asserts the Terraform `locals` match its
-constants. Hardcoding `"fin"` in both places and hoping is not acceptable.
+`edgar_lakehouse_contracts` package and asserts the Terraform `locals` match its
+constants. Hardcoding `"edgar"` in both places and hoping is not acceptable.
 
 ```python
 # tests/test_names_match_contracts.py
-from fin_lakehouse_contracts import names
+from edgar_lakehouse_contracts import names
 import hcl2
 def test_catalog_matches():
     tf = hcl2.load(open("locals.tf"))
@@ -99,7 +99,7 @@ Edition gives you one workspace and one metastore, so environment separation is 
 ## 4. Layered structure
 
 ```
-1sde-databricks-02-infra/
+1sde-databricks-edgar-02-infra/
 ├── AGENTS.md
 ├── backend.tf              # S3 backend, bucket name supplied at init
 ├── providers.tf            # aws + databricks (workspace auth)
@@ -142,7 +142,7 @@ passes outputs between them.
    Any `aws_secretsmanager_secret_version` *resource* puts plaintext in state — never
    write one.
 6. **Least privilege, literally.** The ECS task role gets `s3:PutObject` on
-   `fin-lake-raw/*`. Not `s3:*`. Not the bucket ARN without `/*`. Not
+   `edgar-lake-raw/*`. Not `s3:*`. Not the bucket ARN without `/*`. Not
    `s3:DeleteObject` — the raw zone is immutable and the task has no business deleting
    from it.
 7. **Every S3 bucket:** versioning on, `block_public_access` all four flags true,
@@ -151,7 +151,7 @@ passes outputs between them.
    managed policies broader than `AmazonECSTaskExecutionRolePolicy`.
 9. **CloudWatch log retention is set explicitly** (14 days). The default is "never
    expire," which is a slow-motion bill.
-10. **Tag everything**: `project=fin-lakehouse`, `repo=1sde-databricks-02-infra`,
+10. **Tag everything**: `project=edgar-lakehouse`, `repo=1sde-databricks-edgar-02-infra`,
     `managed_by=terraform`, `env=dev`.
 11. **Idempotency is a test.** A second `apply` must show zero changes. If a resource
     causes perpetual diff, fix it or add `lifecycle { ignore_changes }` with a comment
@@ -173,8 +173,8 @@ repo-5 role, not to the public — the API reads it with credentials.
 **Acceptance:** `tfsec` clean; a test asserts the deny-delete statement exists.
 
 ### F-2 · `modules/iam`
-- `fin-lakehouse-tf` execution role (assumed by the human and by CI).
-- `1sde-databricks-03-ingest-task` role: `s3:PutObject` on raw only,
+- `edgar-lakehouse-tf` execution role (assumed by the human and by CI).
+- `1sde-databricks-edgar-03-ingest-task` role: `s3:PutObject` on raw only,
   `secretsmanager:GetSecretValue` on the two named secrets, `logs:*` on its log group.
 - Five GitHub Actions OIDC roles, one per repo, each scoped to
   `repo:Dark417/<repo-name>:*`. Trust policy uses
@@ -207,9 +207,9 @@ Workspace provider auth: `host` from `var.databricks_host`, `token` from a Secre
 Manager data source.
 
 Resources:
-- `databricks_catalog.fin`
+- `databricks_catalog.edgar`
 - `databricks_schema` ×4 (`landing`, `bronze`, `silver`, `gold`)
-- `databricks_volume.landing_edgar` — MANAGED volume, in `fin.landing`
+- `databricks_volume.landing_edgar` — MANAGED volume, in `edgar.landing`
 - `databricks_grants` — the workspace principal gets `USE_CATALOG`, `USE_SCHEMA`,
   `CREATE_TABLE`, `MODIFY`, `SELECT`
 - `databricks_job.daily` — task graph:
@@ -233,15 +233,15 @@ Each task references the repo-4 wheel **by pinned version**, never `latest`.
 One `aws_ssm_parameter` per published value. Exactly these, no more:
 
 ```
-/fin-lakehouse/dbx/host
-/fin-lakehouse/dbx/volume_path
-/fin-lakehouse/dbx/warehouse_id
-/fin-lakehouse/s3/raw_bucket
-/fin-lakehouse/s3/serving_bucket
-/fin-lakehouse/ecr/ingest_repo
-/fin-lakehouse/contracts/version
-/fin-lakehouse/landing_mode
-/fin-lakehouse/iam/oidc_role_arn/<repo>     (×5)
+/edgar-lakehouse/dbx/host
+/edgar-lakehouse/dbx/volume_path
+/edgar-lakehouse/dbx/warehouse_id
+/edgar-lakehouse/s3/raw_bucket
+/edgar-lakehouse/s3/serving_bucket
+/edgar-lakehouse/ecr/ingest_repo
+/edgar-lakehouse/contracts/version
+/edgar-lakehouse/landing_mode
+/edgar-lakehouse/iam/oidc_role_arn/<repo>     (×5)
 ```
 
 **Rule:** adding a parameter is adding to a public interface. Every one needs a
@@ -288,7 +288,7 @@ runtime, never a GitHub secret.
 ```bash
 export AWS_REGION=us-east-1
 export ACCT=$(aws sts get-caller-identity --query Account --output text)
-export TF_BUCKET=fin-lakehouse-tfstate-$ACCT
+export TF_BUCKET=edgar-lakehouse-tfstate-$ACCT
 
 aws s3api create-bucket --bucket "$TF_BUCKET" --region "$AWS_REGION"
 aws s3api put-bucket-versioning --bucket "$TF_BUCKET" \
@@ -296,7 +296,7 @@ aws s3api put-bucket-versioning --bucket "$TF_BUCKET" \
 aws s3api put-public-access-block --bucket "$TF_BUCKET" \
   --public-access-block-configuration \
   "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
-aws dynamodb create-table --table-name fin-lakehouse-tflock \
+aws dynamodb create-table --table-name edgar-lakehouse-tflock \
   --attribute-definitions AttributeName=LockID,AttributeType=S \
   --key-schema AttributeName=LockID,KeyType=HASH \
   --billing-mode PAY_PER_REQUEST
@@ -304,10 +304,10 @@ aws dynamodb create-table --table-name fin-lakehouse-tflock \
 
 ### 9.2 Create secrets by hand 🔴
 ```bash
-aws secretsmanager create-secret --name /fin-lakehouse/databricks/pat \
+aws secretsmanager create-secret --name /edgar-lakehouse/databricks/pat \
   --secret-string "dapi..."
-aws secretsmanager create-secret --name /fin-lakehouse/sec/user-agent \
-  --secret-string "fin-lakehouse-demo you@example.com"
+aws secretsmanager create-secret --name /edgar-lakehouse/sec/user-agent \
+  --secret-string "edgar-lakehouse-demo you@example.com"
 ```
 The SEC rejects requests without a `User-Agent` carrying a real contact email. Use an
 address you monitor.
@@ -318,13 +318,13 @@ schedule. Do this before the first apply, not after.
 
 ### 9.4 Create the repo and wire the docs
 ```bash
-gh repo create Dark417/1sde-databricks-02-infra \
+gh repo create Dark417/1sde-databricks-edgar-02-infra \
   --private --add-readme --gitignore Terraform --license mit --clone
-cd 1sde-databricks-02-infra
+cd 1sde-databricks-edgar-02-infra
 mkdir -p docs && cp ../design/00-design-doc.md ../design/02-data-contracts.md docs/
 # pip cannot read s3:// URLs — download the wheel first (for the names-match test)
 aws s3 cp "s3://$TF_BUCKET/wheels/" /tmp/wheels/ --recursive
-pip install "fin-lakehouse-contracts==<CONTRACTS_VERSION>" --find-links /tmp/wheels/
+pip install "edgar-lakehouse-contracts==<CONTRACTS_VERSION>" --find-links /tmp/wheels/
 ```
 
 ### 9.5 First apply — read the plan
@@ -349,12 +349,12 @@ This is the one place the build order loops backward. Tables cannot be created b
 their schemas exist, and Terraform does not create tables.
 
 ### 9.7 Verify in the Databricks UI
-Catalog Explorer → `fin` → four schemas → `landing.edgar` volume present.
+Catalog Explorer → `edgar` → four schemas → `landing.edgar` volume present.
 Then confirm Liquibase's `DATABASECHANGELOG` table appeared after 9.6.
 
 ### 9.8 Record what repos 3–5 need
 ```bash
-aws ssm get-parameters-by-path --path /fin-lakehouse --recursive \
+aws ssm get-parameters-by-path --path /edgar-lakehouse --recursive \
   --query 'Parameters[].[Name,Value]' --output table
 ```
 Repos 3–5 read these at runtime. You should never paste these values into another
@@ -372,13 +372,13 @@ terraform apply -var-file=envs/dev.tfvars -var schedule_enabled=true
 
 | Output | Form | Consumed by |
 |---|---|---|
-| SSM `/fin-lakehouse/*` | Parameter Store | 3, 4, 5 at runtime |
+| SSM `/edgar-lakehouse/*` | Parameter Store | 3, 4, 5 at runtime |
 | OIDC role ARNs | SSM + IAM | 3, 4, 5 CI |
 | ECR repo URI | SSM | 3 (pushes image) |
 | ECS task definition family | SSM | 3 (deploy target) |
 | Databricks catalog/schemas/volume | live objects | 1 (Liquibase target), 4 |
 | Databricks job id | SSM | 4 (updates task wheel version) |
-| `fin-lake-serving` bucket | live | 4 (writes), 5 (reads) |
+| `edgar-lake-serving` bucket | live | 4 (writes), 5 (reads) |
 
 **Contract:** repos 3–5 read config from SSM at runtime. They do not hardcode ARNs,
 bucket names, or hosts. A hardcoded ARN in a downstream repo is a review failure.
