@@ -42,7 +42,8 @@ constraints and §6 repo layout), `02-data-contracts.md`.
 ## 1. Scope
 
 ### Owns
-- Terraform state backend config (bucket + DynamoDB lock created by hand, §9.1).
+- Terraform state backend config (bucket created by hand, §9.1; locking is
+  S3-native via `use_lockfile` — no DynamoDB table).
 - S3: `edgar-lake-raw`, `edgar-lake-serving`.
 - IAM: Terraform execution role, ECS task role, **GitHub Actions OIDC roles for all
   five repos**.
@@ -94,7 +95,7 @@ def test_catalog_matches():
 ## 3. Tech baseline
 
 ```
-Terraform      >= 1.9
+Terraform      >= 1.10   (use_lockfile; older binaries silently run UNLOCKED)
 AWS provider   ~> 5.60
 Databricks     ~> 1.50   (WORKSPACE-level only)
 Lint           terraform fmt, tflint
@@ -102,7 +103,8 @@ Security       tfsec (or checkov)
 Tests          pytest + python-hcl2 for the contracts-match test
 ```
 
-State: S3 backend + DynamoDB lock. One state file. Workspaces are not used — Free
+State: S3 backend, S3-native locking (`use_lockfile`, Terraform ≥ 1.10 — no
+DynamoDB). One state file. Workspaces are not used — Free
 Edition gives you one workspace and one metastore, so environment separation is by
 **catalog prefix**, not by Terraform workspace. Document that in `README.md`.
 
@@ -329,11 +331,14 @@ aws s3api put-bucket-versioning --bucket "$TF_BUCKET" \
 aws s3api put-public-access-block --bucket "$TF_BUCKET" \
   --public-access-block-configuration \
   "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
-aws dynamodb create-table --table-name edgar-lakehouse-tflock \
-  --attribute-definitions AttributeName=LockID,AttributeType=S \
-  --key-schema AttributeName=LockID,KeyType=HASH \
-  --billing-mode PAY_PER_REQUEST
 ```
+
+No DynamoDB lock table. The backend sets `use_lockfile = true` (Terraform ≥
+1.10), which takes the state lock by conditionally writing a `.tflock` object
+beside the state file — the table this section used to create was deleted on
+2026-08-02. An older Terraform binary silently ignores `use_lockfile` and runs
+with **no locking at all**, which is why the version floor is enforced in every
+`required_version` and the CI pin.
 
 ### 9.2 Create secrets by hand 🔴
 ```bash
