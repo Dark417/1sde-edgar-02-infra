@@ -30,18 +30,13 @@ resource "aws_ecs_cluster" "this" {
   }
 }
 
-# Fargate only. No EC2 capacity provider: there is no steady-state workload here
-# to amortise an instance against, and a always-on instance would be the single
-# largest line on the bill.
-resource "aws_ecs_cluster_capacity_providers" "this" {
-  cluster_name       = aws_ecs_cluster.this.name
-  capacity_providers = ["FARGATE"]
-
-  default_capacity_provider_strategy {
-    capacity_provider = "FARGATE"
-    weight            = 1
-  }
-}
+# No aws_ecs_cluster_capacity_providers resource.
+#
+# Fargate is selected explicitly by the EventBridge target, which sets
+# launch_type = "FARGATE" on every run. Pinning the cluster's capacity provider
+# as well would restate that in a second place without changing any behaviour —
+# and there is no EC2 capacity provider to exclude, because nothing here runs
+# long enough to amortise an always-on instance against.
 
 resource "aws_security_group" "task" {
   name        = "${var.name_prefix}-ingest-task"

@@ -1,32 +1,36 @@
-# Dev environment inputs.
+# Dev environment inputs — the PUBLIC, non-identifying half.
 #
-# The values below come from your live workspace and from repo 4's build. These
-# are identifiers, not secrets — the PAT lives in Secrets Manager and is read as
-# a data source, never written here.
-
-# Verified live 2026-08-01 via `databricks catalogs list`.
-databricks_host = "https://dbc-6e85f573-bc49.cloud.databricks.com"
-
-# SQL Warehouses -> your warehouse -> Connection details -> the id in the HTTP path.
-# Free Edition creates this for you; Terraform does not own it.
-warehouse_id = "733dc896c4c3751c"
+# This repo is public, so three values are deliberately NOT here:
+#
+#   databricks_host        the workspace URL
+#   warehouse_id           the SQL warehouse id
+#   allowed_account_ids    the AWS account id
+#
+# They are OMITTED rather than set to placeholders. That distinction matters:
+# `-var-file` outranks `TF_VAR_*` environment variables in Terraform's precedence
+# order, so a placeholder left here would silently override the real value CI
+# injects and fail with a confusing "account ID not allowed". An absent variable
+# fails loudly and immediately instead.
+#
+# Supply them one of two ways:
+#
+#   locally   envs/dev.local.tfvars  (gitignored), passed as a SECOND -var-file
+#             after this one, since the later -var-file wins:
+#               terraform plan -var-file=envs/dev.tfvars \
+#                              -var-file=envs/dev.local.tfvars
+#
+#   in CI     TF_VAR_databricks_host / TF_VAR_warehouse_id /
+#             TF_VAR_allowed_account_ids, from GitHub secrets. Nothing here
+#             overrides them because they are not declared in this file.
 
 # Exact repo-4 wheel version. Bump this to roll the job forward; never "latest".
 pipelines_wheel_version = "0.1.0"
 
-# --- Values with sane defaults, restated here to make them visible ------------
-
 # Matches the Databricks metastore region (metastore_aws_us_east_2).
 aws_region = "us-east-2"
 
-# The dedicated member account created under the organization for this project.
-# Terraform hard-fails if the credentials in your shell resolve anywhere else,
-# so a forgotten --profile is a clean error rather than resources built in the
-# management account alongside unrelated SageMaker work.
-allowed_account_ids = ["806168459926"]
-
 # Local runs assume OrganizationAccountAccessRole via this profile. CI overrides
-# it to "" and uses OIDC federation instead.
+# it with `-var aws_profile=` and uses OIDC federation instead.
 aws_profile = "edgar"
 env         = "dev"
 

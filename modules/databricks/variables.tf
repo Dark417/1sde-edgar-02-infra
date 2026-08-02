@@ -19,8 +19,13 @@ variable "volume_name" {
 }
 
 variable "workspace_principal" {
-  description = "Principal receiving grants (group or account email)."
+  description = <<-EOT
+    Account-level principal receiving grants, normally a user's email. Empty
+    disables the grant resources entirely. Workspace-local groups such as `users`
+    do NOT resolve in Unity Catalog.
+  EOT
   type        = string
+  default     = ""
 }
 
 variable "wheel_dir" {

@@ -19,6 +19,14 @@ locals {
 
   ssm_path_arn = "arn:${local.partition}:ssm:${local.region}:${local.account}:parameter/edgar-lakehouse/*"
 
+  # The contracts wheel lives under wheels/ in the Terraform state bucket
+  # (AGENTS.md §9.4). That bucket is created by hand during bootstrap and is not
+  # Terraform-managed, so access is granted identity-side rather than by bucket
+  # policy. Derived from the account id rather than taken as a required input,
+  # since the bootstrap script builds the name the same way.
+  artifacts_bucket_arn = var.artifacts_bucket != "" ? "arn:${local.partition}:s3:::${var.artifacts_bucket}" : "arn:${local.partition}:s3:::${var.name_prefix}-tfstate-${local.account}"
+  wheels_prefix        = "wheels/*"
+
   oidc_provider_arn = var.create_github_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : var.github_oidc_provider_arn
 }
 
@@ -239,12 +247,19 @@ resource "aws_iam_role" "ingest_execution" {
   assume_role_policy = data.aws_iam_policy_document.ecs_tasks_trust.json
 }
 
-# The one AWS managed policy rule 8 permits by name.
-resource "aws_iam_role_policy_attachment" "execution_managed" {
-  role       = aws_iam_role.ingest_execution.name
-  policy_arn = "arn:${local.partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-}
-
+# NOT attached: arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy.
+#
+# Rule 8 permits that managed policy by name, but attaching it here would be a
+# least-privilege regression. Its actual document (verified against the API) is a
+# single statement granting ecr:GetAuthorizationToken, ecr:BatchGetImage,
+# ecr:GetDownloadUrlForLayer, ecr:BatchCheckLayerAvailability, logs:CreateLogStream
+# and logs:PutLogEvents on Resource "*".
+#
+# The inline policy below grants exactly those actions, but scoped to this
+# project's ECR repository and this task's log group. Attaching the managed
+# policy alongside it would re-grant them account-wide and make the scoping
+# decorative. The inline policy is a strict superset of what the task needs, so
+# nothing is lost by omitting the managed one.
 data "aws_iam_policy_document" "ingest_execution" {
   statement {
     sid    = "PullIngestImage"
@@ -446,4 +461,64 @@ resource "aws_iam_role_policy" "config_reader" {
   name   = "read-project-config"
   role   = aws_iam_role.oidc[each.value].id
   policy = data.aws_iam_policy_document.config_reader.json
+}
+
+# ---------------------------------------------------------------------------
+# Contracts wheel distribution
+#
+# Every repo installs edgar-lakehouse-contracts from s3://<state-bucket>/wheels/
+# because the package is private and not on PyPI (pip cannot read s3:// URLs, so
+# CI does an `aws s3 cp` first). Repo 1 builds and publishes it; everyone else,
+# including repo 2's own test job, only reads.
+#
+# Without these, every repo's CI fails at the install step with AccessDenied —
+# a gap that was invisible until the roles were audited against what the
+# workflows actually run.
+# ---------------------------------------------------------------------------
+data "aws_iam_policy_document" "wheels_read" {
+  statement {
+    sid       = "ListWheelsPrefix"
+    effect    = "Allow"
+    actions   = ["s3:ListBucket"]
+    resources = [local.artifacts_bucket_arn]
+
+    condition {
+      test     = "StringLike"
+      variable = "s3:prefix"
+      values   = ["wheels/*", "wheels"]
+    }
+  }
+
+  statement {
+    sid       = "ReadWheels"
+    effect    = "Allow"
+    actions   = ["s3:GetObject"]
+    resources = ["${local.artifacts_bucket_arn}/${local.wheels_prefix}"]
+  }
+}
+
+resource "aws_iam_role_policy" "wheels_read" {
+  for_each = toset(var.github_repos)
+
+  name   = "read-contracts-wheel"
+  role   = aws_iam_role.oidc[each.value].id
+  policy = data.aws_iam_policy_document.wheels_read.json
+}
+
+# Repo 1 is the only publisher. Deliberately no DeleteObject: a published wheel
+# version is immutable, and overwriting one silently changes what every other
+# repo installs for a version they pinned with ==.
+data "aws_iam_policy_document" "wheels_write" {
+  statement {
+    sid       = "PublishWheels"
+    effect    = "Allow"
+    actions   = ["s3:PutObject"]
+    resources = ["${local.artifacts_bucket_arn}/${local.wheels_prefix}"]
+  }
+}
+
+resource "aws_iam_role_policy" "wheels_write" {
+  name   = "publish-contracts-wheel"
+  role   = aws_iam_role.oidc["1sde-edgar-01-contracts"].id
+  policy = data.aws_iam_policy_document.wheels_write.json
 }

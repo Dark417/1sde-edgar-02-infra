@@ -288,7 +288,7 @@ runtime, never a GitHub secret.
 ```bash
 export AWS_PROFILE=edgar
 export AWS_REGION=us-east-2   # law 11: fixed by the metastore, not a preference
-export ACCT=$(aws sts get-caller-identity --query Account --output text)   # 806168459926
+export ACCT=$(aws sts get-caller-identity --query Account --output text)   # <AWS_ACCOUNT_ID>
 export TF_BUCKET=edgar-lakehouse-tfstate-$ACCT
 
 # us-east-2 requires an explicit LocationConstraint; us-east-1 is the one region

@@ -23,6 +23,12 @@ crash.*.log
 # read as data sources; nothing sensitive is ever written to a tfvars file.
 !envs/*.tfvars
 
+# ...but never the local overrides. This rule comes AFTER the negation above
+# because the last matching pattern wins. envs/*.local.tfvars holds the AWS
+# account id, workspace URL and warehouse id — identifiers that do not belong in
+# a public repo.
+envs/*.local.tfvars
+
 # Ignore override files as they are usually used to override resources locally and so
 # are not checked in
 override.tf
@@ -58,3 +64,9 @@ terraform.rc
 tf.plan
 plan.txt
 
+docs/LOCAL-VALUES.md
+*.tfstate*
+.env
+changelog/liquibase.properties
+*.pem
+*.key

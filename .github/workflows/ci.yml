@@ -30,6 +30,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Secret scan (Tier-1/Tier-2 leak gate, root AGENTS.md)
+        run: bash scripts/secret-scan.sh
+
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}

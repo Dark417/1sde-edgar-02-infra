@@ -18,7 +18,7 @@ yourself creating in the console is a bug in this repo, not a bootstrap step.
 
 ## 0. Which account, and how you reach it
 
-This project lives in a **dedicated member account**, `806168459926`, created
+This project lives in a **dedicated member account**, `<AWS_ACCOUNT_ID>`, created
 under the organization so that nothing here can touch the management account's
 unrelated work. You never need its root password for day-to-day use:
 Organizations created an `OrganizationAccountAccessRole` in it, and the `edgar`
@@ -27,7 +27,7 @@ CLI profile assumes that role from the management-account credentials.
 ```ini
 # ~/.aws/config
 [profile edgar]
-role_arn       = arn:aws:iam::806168459926:role/OrganizationAccountAccessRole
+role_arn       = arn:aws:iam::<AWS_ACCOUNT_ID>:role/OrganizationAccountAccessRole
 source_profile = default
 region         = us-east-2
 output         = json
@@ -35,12 +35,12 @@ output         = json
 
 ```bash
 aws sts get-caller-identity --profile edgar
-# -> arn:aws:sts::806168459926:assumed-role/OrganizationAccountAccessRole/...
+# -> arn:aws:sts::<AWS_ACCOUNT_ID>:assumed-role/OrganizationAccountAccessRole/...
 ```
 
 **Console access**, when you need to look at something: sign in to the
 management account, then use the account menu → *Switch role* with account
-`806168459926`, role `OrganizationAccountAccessRole`. The root email
+`<AWS_ACCOUNT_ID>`, role `OrganizationAccountAccessRole`. The root email
 (`xxlei1997@gmail.com`) has no password set — you would have to use *Forgot
 password* to create one, which is worth doing once purely so you can enable MFA
 on it, and then not using again.
@@ -50,7 +50,7 @@ on it, and then not using again.
 Databricks' own account. Buckets anywhere else mean every exported byte crosses
 a region boundary.
 
-`envs/dev.tfvars` pins `allowed_account_ids = ["806168459926"]`, so Terraform
+`envs/dev.tfvars` pins `allowed_account_ids = ["<AWS_ACCOUNT_ID>"]`, so Terraform
 refuses to run if your shell resolves to any other account. A forgotten profile
 is a clean error instead of a project built in the wrong place.
 
@@ -62,7 +62,7 @@ account, and the bucket name would embed the wrong account id.
 ```bash
 export AWS_PROFILE=edgar
 export AWS_REGION=us-east-2
-export ACCT=$(aws sts get-caller-identity --query Account --output text)   # 806168459926
+export ACCT=$(aws sts get-caller-identity --query Account --output text)   # <AWS_ACCOUNT_ID>
 export TF_BUCKET=edgar-lakehouse-tfstate-$ACCT
 
 # us-east-2 requires an explicit LocationConstraint; us-east-1 is the one region

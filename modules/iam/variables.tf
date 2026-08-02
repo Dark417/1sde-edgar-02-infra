@@ -48,6 +48,16 @@ variable "secret_arns" {
   type        = list(string)
 }
 
+variable "artifacts_bucket" {
+  description = <<-EOT
+    Bucket holding the published contracts wheel under wheels/. Defaults to the
+    Terraform state bucket, whose name is derived from the account id the same
+    way the bootstrap script builds it. Override only if wheels move elsewhere.
+  EOT
+  type        = string
+  default     = ""
+}
+
 variable "create_github_oidc_provider" {
   description = <<-EOT
     Create the GitHub OIDC provider. Set false if the account already has one —

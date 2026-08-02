@@ -68,17 +68,23 @@ variable "databricks_pat_secret_name" {
 
 variable "workspace_principal" {
   description = <<-EOT
-    Principal receiving catalog and volume grants. Must be a group or user that
-    actually exists in the workspace — `databricks_grants` fails at apply time
-    with a principal that does not resolve.
+    Principal receiving catalog and volume grants. Empty disables the grants
+    entirely, which is the default because the value is an identity and this repo
+    is public — supply it from envs/dev.local.tfvars.
 
-    Verified 2026-08-01: this workspace has exactly two groups, `admins` and
-    `users`. The commonly-cited "account users" group does NOT exist here, so it
-    is not the default. Set this to a user's email instead if you want the grant
-    scoped to one identity rather than every workspace user.
+    It must be an ACCOUNT-level identity, not a workspace group. Learned the hard
+    way on 2026-08-01: `databricks groups list` reports `admins` and `users`, but
+    both are workspace-local SCIM groups and Unity Catalog rejects them with
+    "Could not find principal with name users". The commonly-cited "account users"
+    group does not exist on Free Edition either. What does resolve is an account
+    user's email address.
+
+    Note these grants are close to a no-op on a single-user workspace: the catalog
+    owner already holds every privilege implicitly. They are kept because they
+    document intended access, and because a second identity would need them.
   EOT
   type        = string
-  default     = "users"
+  default     = ""
 }
 
 variable "warehouse_id" {

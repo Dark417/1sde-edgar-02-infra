@@ -157,7 +157,7 @@ wave 5   params                       ← needs identifiers from nearly everythi
 
 ## 6. AWS: dedicated account, us-east-2, no static keys
 
-**Dedicated member account `806168459926`** ("demo") under organization
+**Dedicated member account `<AWS_ACCOUNT_ID>`** ("demo") under organization
 `o-q6k3jav7zz`. The management account `381492022873` holds unrelated SageMaker
 work — which is exactly the arrangement AWS advises against, since SCPs do not
 apply to a management account.
@@ -185,7 +185,7 @@ PAT currently sitting in `liquibase.properties`.
 - `*.tfvars` is gitignored by GitHub's default Terraform template, which would
   have made CI's `-var-file=envs/dev.tfvars` fail. Negated with `!envs/*.tfvars`.
 
-**Safety net:** `allowed_account_ids = ["806168459926"]` in `dev.tfvars` makes
+**Safety net:** `allowed_account_ids = ["<AWS_ACCOUNT_ID>"]` in `dev.tfvars` makes
 Terraform refuse to run against any other account, so a forgotten profile is a
 clean error rather than a project built alongside the SageMaker work.
 
@@ -288,7 +288,7 @@ silently drops something the other tool thinks it manages.
 2. **Rotate the Databricks PAT.** The current one is in gitignored
    `changelog/liquibase.properties` and has been pasted into chat. Generate a
    fresh one for Secrets Manager and revoke the old.
-3. **Enable MFA on the `806168459926` root user** — currently off.
+3. **Enable MFA on the `<AWS_ACCOUNT_ID>` root user** — currently off.
 4. **First `terraform apply`** — check the plan by hand: zero destroys, the
    catalog/schemas/volume showing as *import* not create, schedule `DISABLED`,
    job `PAUSED`, no plaintext secrets in the output.

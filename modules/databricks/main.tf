@@ -79,7 +79,13 @@ resource "databricks_volume" "wheels" {
 # ---------------------------------------------------------------------------
 # Grants
 # ---------------------------------------------------------------------------
+# All three grant resources are conditional on a principal being supplied.
+# Unity Catalog requires an ACCOUNT-level identity here; the workspace groups
+# `admins` and `users` that `databricks groups list` reports are workspace-local
+# SCIM groups and fail with "Could not find principal with name users".
 resource "databricks_grants" "catalog" {
+  count = var.workspace_principal != "" ? 1 : 0
+
   catalog = databricks_catalog.this.name
 
   grant {
@@ -92,6 +98,8 @@ resource "databricks_grants" "catalog" {
 # not implied by the grant above. Repo 3 cannot push a landing object without
 # WRITE_VOLUME, and Auto Loader cannot read one without READ_VOLUME.
 resource "databricks_grants" "landing_volume" {
+  count = var.workspace_principal != "" ? 1 : 0
+
   volume = databricks_volume.landing_edgar.id
 
   grant {
@@ -101,6 +109,8 @@ resource "databricks_grants" "landing_volume" {
 }
 
 resource "databricks_grants" "wheels_volume" {
+  count = var.workspace_principal != "" ? 1 : 0
+
   volume = databricks_volume.wheels.id
 
   grant {
