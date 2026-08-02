@@ -47,7 +47,7 @@ resource "aws_security_group" "task" {
   # that makes outbound calls and exits.
 }
 
-#trivy:ignore:AVD-AWS-0104
+#trivy:ignore:AWS-0104
 # Unrestricted egress is accepted deliberately. The destinations are sec.gov
 # plus several AWS service endpoints, none of which publish stable CIDRs — an
 # allowlist would break whenever SEC's CDN moves, and pinning AWS ranges would
@@ -58,12 +58,6 @@ resource "aws_vpc_security_group_egress_rule" "https" {
   security_group_id = aws_security_group.task.id
   description       = "HTTPS to sec.gov, S3, Secrets Manager, SSM and Databricks."
 
-  # tfsec:ignore:aws-ec2-no-public-egress-sgr
-  # The destinations are public API endpoints across several AWS-owned and
-  # SEC-owned ranges that do not have stable published CIDRs. Restricting egress
-  # would mean VPC endpoints for the AWS services plus an allowlist for sec.gov
-  # that breaks whenever their CDN moves. Inbound is what matters here, and it is
-  # empty.
   cidr_ipv4   = "0.0.0.0/0"
   ip_protocol = "tcp"
   from_port   = 443

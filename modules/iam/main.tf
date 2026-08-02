@@ -129,7 +129,7 @@ resource "aws_iam_role" "terraform" {
   assume_role_policy = data.aws_iam_policy_document.terraform_trust.json
 }
 
-#trivy:ignore:AVD-AWS-0345
+#trivy:ignore:AWS-0345
 # The s3:* finding is accepted for this role only. It is the provisioning
 # identity: it creates and destroys the buckets, so it cannot be scoped to ARNs
 # that do not exist until it makes them. Blast radius is bounded instead by the
