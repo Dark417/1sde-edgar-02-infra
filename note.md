@@ -357,7 +357,7 @@ An absent variable fails loudly; a placeholder fails confusingly.
 - Revoke the old `liquibase-local` Databricks PAT (a fresh one is now in Secrets
   Manager as `/edgar-lakehouse/databricks/pat`, minted without ever being
   printed) and repoint `liquibase.properties` at it.
-- Enable MFA on the `806168459926` root user.
+- Enable MFA on the `<AWS_ACCOUNT_ID>` member-account root user.
 - Set GitHub repo variables/secrets so CI can run: `AWS_ROLE_ARN`,
   `TF_STATE_BUCKET`, plus `TF_VAR_databricks_host`, `TF_VAR_warehouse_id`,
   `TF_VAR_allowed_account_ids`.

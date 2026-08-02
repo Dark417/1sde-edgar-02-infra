@@ -41,7 +41,7 @@ aws sts get-caller-identity --profile edgar
 **Console access**, when you need to look at something: sign in to the
 management account, then use the account menu → *Switch role* with account
 `<AWS_ACCOUNT_ID>`, role `OrganizationAccountAccessRole`. The root email
-(`xxlei1997@gmail.com`) has no password set — you would have to use *Forgot
+(`<MEMBER_ROOT_EMAIL>`) has no password set — you would have to use *Forgot
 password* to create one, which is worth doing once purely so you can enable MFA
 on it, and then not using again.
 

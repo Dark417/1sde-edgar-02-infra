@@ -32,14 +32,33 @@ scan "Databricks PAT committed"      'dapi[0-9a-f]{24,}'
 scan "AWS access key id committed"   '(A3T[A-Z0-9]|AKIA|ASIA)[A-Z0-9]{16}'
 scan "Private key committed"         'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY'
 
-# --- Tier 2: environment identifiers. Use a placeholder + resolution hint. ---
-scan "AWS account id (use <AWS_ACCOUNT_ID>)"      '\b806168459926\b'
-scan "Metastore id (use <METASTORE_ID>)"          '083f6670-cb9a-4058-9fd5-ed2fd09b1f15'
-scan "Workspace id (use <DBX_WORKSPACE_ID>)"      'dbc-6e85f573-bc49'
-scan "Warehouse id (use <WAREHOUSE_ID>)"          '\b733dc896c4c3751c\b'
+# --- Tier 2: environment identifiers -----------------------------------------
+#
+# The literals are NOT written here. Hardcoding them in a script committed to a
+# public repo publishes exactly what the scan exists to keep unpublished — and
+# the ':!scripts/secret-scan.sh' exclusion above meant the file could not even
+# flag itself. Instead they are sourced from a gitignored file.
+#
+# Create scripts/tier2.env (see tier2.env.example) with KEY=VALUE lines. In CI,
+# write it from repository secrets before invoking this script. If it is absent
+# the Tier-2 checks are skipped with a warning rather than silently passing.
+TIER2="$(dirname "$0")/tier2.env"
+if [ -f "$TIER2" ]; then
+  # shellcheck disable=SC1090
+  . "$TIER2"
+  [ -n "${AWS_ACCOUNT_ID:-}" ]     && scan "AWS account id (use <AWS_ACCOUNT_ID>)"      "\\b${AWS_ACCOUNT_ID}\\b"
+  [ -n "${METASTORE_ID:-}" ]       && scan "Metastore id (use <METASTORE_ID>)"          "${METASTORE_ID}"
+  [ -n "${DBX_WORKSPACE_ID:-}" ]   && scan "Workspace id (use <DBX_WORKSPACE_ID>)"      "${DBX_WORKSPACE_ID}"
+  [ -n "${WAREHOUSE_ID:-}" ]       && scan "Warehouse id (use <WAREHOUSE_ID>)"          "\\b${WAREHOUSE_ID}\\b"
+  [ -n "${MEMBER_ROOT_EMAIL:-}" ]  && scan "Root email (use <MEMBER_ROOT_EMAIL>)"       "${MEMBER_ROOT_EMAIL}"
+else
+  echo "::warning::scripts/tier2.env absent - Tier-2 identifier checks skipped."
+fi
 
 # --- Files that must never be tracked ----------------------------------------
-tracked_bad=$(git ls-files | grep -E '(^|/)(\.env|.*\.tfstate.*|liquibase\.properties|LOCAL-VALUES\.md|plan\.txt)$' || true)
+# apply.txt joins the list: terraform apply output is dense with account ids and
+# resource ARNs, and it was tracked once before this rule existed.
+tracked_bad=$(git ls-files | grep -E '(^|/)(\.env|tier2\.env|.*\.tfstate.*|liquibase\.properties|LOCAL-VALUES\.md|plan\.txt|apply\.txt|tf\.plan)$' || true)
 if [ -n "$tracked_bad" ]; then
   echo "::error::Files that must never be committed are tracked:"
   echo "$tracked_bad"

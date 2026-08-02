@@ -70,3 +70,10 @@ docs/LOCAL-VALUES.md
 changelog/liquibase.properties
 *.pem
 *.key
+
+# terraform apply output: dense with account ids and resource ARNs
+apply.txt
+
+# Tier-2 identifier literals for scripts/secret-scan.sh
+scripts/tier2.env
+
