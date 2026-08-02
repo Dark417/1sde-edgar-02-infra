@@ -185,7 +185,8 @@ repo-5 role, not to the public — the API reads it with credentials.
 `"Resource": "*"` outside of explicitly annotated exceptions.
 
 ### F-3 · `modules/registry`
-ECR repo, image scanning on push, lifecycle policy keeping the last 10 images.
+ECR repo, image scanning on push, lifecycle policy keeping the last **3** images
+(the 500 MB-month private-repo free tier; ten ~250 MB images can exceed it).
 
 ### F-4 · `modules/compute`
 ECS Fargate cluster (no EC2 capacity provider). Task definition: 0.5 vCPU / 1 GB,

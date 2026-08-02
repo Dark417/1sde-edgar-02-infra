@@ -16,18 +16,22 @@ resource "aws_ecr_repository" "ingest" {
   }
 }
 
-resource "aws_ecr_lifecycle_policy" "keep_last_10" {
+# Three, not ten. The ECR free tier is 500 MB-month on private repositories;
+# the ingest image is budgeted under 250 MB, so ten retained images can cross it
+# even with layer sharing and start billing against a $10/month alarm. Three
+# covers the only real need -- roll back to the previous digest, with one spare.
+resource "aws_ecr_lifecycle_policy" "keep_last_3" {
   repository = aws_ecr_repository.ingest.name
 
   policy = jsonencode({
     rules = [
       {
         rulePriority = 1
-        description  = "Keep the last 10 images; expire older ones."
+        description  = "Keep the last 3 images; expire older ones."
         selection = {
           tagStatus   = "any"
           countType   = "imageCountMoreThan"
-          countNumber = 10
+          countNumber = 3
         }
         action = {
           type = "expire"
