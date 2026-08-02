@@ -75,10 +75,18 @@ module "compute" {
     LANDING_MODE = var.landing_mode
     RAW_BUCKET   = local.raw_bucket
     AWS_REGION   = var.aws_region
+    # Local mode is repo 3's *default*; production must opt out explicitly or
+    # the task lands to its own container disk, exits 0, and the data vanishes
+    # with the task (repo 3 docs/03 §8). Verified live: a config-check task
+    # without this printed local_only: true.
+    LOCAL_ONLY = "false"
   })
 
   secret_env = {
     SEC_USER_AGENT = data.aws_secretsmanager_secret.sec_user_agent.arn
+    # volume landing mode needs the workspace PAT; DBX_HOST resolves from SSM
+    # at runtime, but a secret has no SSM fallback by design.
+    DBX_TOKEN = data.aws_secretsmanager_secret.databricks_pat.arn
   }
 }
 

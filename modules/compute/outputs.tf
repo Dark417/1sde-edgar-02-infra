@@ -9,8 +9,14 @@ output "cluster_name" {
 }
 
 output "task_definition_arn" {
-  description = "Current task definition revision ARN."
-  value       = aws_ecs_task_definition.ingest.arn
+  description = <<-EOT
+    Task definition ARN without a revision, so the schedule launches the
+    latest ACTIVE revision. Repo 3's CI registers new revisions by digest
+    outside Terraform; pinning a revision here would freeze the schedule on
+    whatever Terraform last applied (observed live: the schedule held ":1",
+    whose image tag no longer existed).
+  EOT
+  value       = aws_ecs_task_definition.ingest.arn_without_revision
 }
 
 output "family" {
