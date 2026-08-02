@@ -14,11 +14,34 @@ resource "databricks_catalog" "this" {
   name    = var.catalog
   comment = "SEC EDGAR medallion lakehouse. Tables are managed by Liquibase in repo 1."
 
-  # Managed storage: Free Edition's default metastore root. No storage_root, and
-  # no external location, because both are account-scoped concepts.
+  # Managed storage: Free Edition's default metastore root. No storage_root and
+  # no external location are declared, because both are account-scoped concepts.
 
   # force_destroy stays at its default of false. A `terraform destroy` that took
   # the catalog with it would delete every table Liquibase created.
+
+  lifecycle {
+    ignore_changes = [
+      # THIS BLOCK PREVENTS DATA LOSS. The catalog was created by hand before
+      # this Terraform existed, so the metastore assigned it a storage_root.
+      # Declaring nothing here reads as "remove storage_root", and that attribute
+      # forces replacement — the first plan came back with "1 to destroy" and
+      # "Warning: this will destroy the imported resource", which would have
+      # dropped the catalog and all 13 Liquibase-managed tables inside it.
+      #
+      # storage_root is assigned by the metastore and is not this repo's to
+      # manage. It is also environment-specific, so pinning the literal value in
+      # config would be both wrong and a leak of internal storage paths.
+      storage_root,
+
+      # Set by Databricks at creation (collation and similar). Not ours either.
+      properties,
+
+      # Ownership is managed in the workspace, not here. Left unmanaged so a
+      # plan does not churn every time it differs.
+      owner,
+    ]
+  }
 }
 
 resource "databricks_schema" "this" {

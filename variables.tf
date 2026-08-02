@@ -68,11 +68,17 @@ variable "databricks_pat_secret_name" {
 
 variable "workspace_principal" {
   description = <<-EOT
-    Principal receiving catalog grants. On Free Edition this is normally the
-    group "account users" or your own account email.
+    Principal receiving catalog and volume grants. Must be a group or user that
+    actually exists in the workspace — `databricks_grants` fails at apply time
+    with a principal that does not resolve.
+
+    Verified 2026-08-01: this workspace has exactly two groups, `admins` and
+    `users`. The commonly-cited "account users" group does NOT exist here, so it
+    is not the default. Set this to a user's email instead if you want the grant
+    scoped to one identity rather than every workspace user.
   EOT
   type        = string
-  default     = "account users"
+  default     = "users"
 }
 
 variable "warehouse_id" {

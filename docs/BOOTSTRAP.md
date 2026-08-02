@@ -139,9 +139,44 @@ message.
 ## 5. First plan — check by hand before applying
 
 ```bash
-terraform init -backend-config="bucket=$TF_BUCKET"
+terraform init \
+  -backend-config="bucket=$TF_BUCKET" \
+  -backend-config="profile=edgar"
 terraform plan -var-file=envs/dev.tfvars -out=tf.plan
 ```
+
+**The backend needs its own `profile`.** This catches everyone once: the S3
+backend resolves credentials *independently* of the `provider "aws"` block, so
+the `aws_profile` variable does not reach it. Without the second
+`-backend-config` it falls back to your default profile — the management
+account — and fails with a bare `403 Forbidden` on `HeadObject` against the demo
+account's bucket. It is passed at init rather than written into `backend.tf`
+because CI authenticates by OIDC and has no profiles configured.
+
+### The trap that nearly destroyed the catalog
+
+The first real plan came back with:
+
+```
+Plan: 6 to import, 62 to add, 5 to change, 1 to destroy.
+
+  # module.databricks.databricks_catalog.this must be replaced
+  # Warning: this will destroy the imported resource
+      - storage_root = "s3://dbstorage-prod-.../..." -> null # forces replacement
+```
+
+The catalog was created by hand, so the metastore assigned it a `storage_root`.
+Declaring nothing for that attribute reads as *remove it*, and `storage_root`
+forces replacement — which would have dropped the catalog and every one of the
+13 Liquibase-managed tables inside it.
+
+The fix is a `lifecycle { ignore_changes = [storage_root, properties, owner] }`
+block on `databricks_catalog.this`. Those attributes belong to the metastore and
+the workspace, not to this repo. **Do not remove that block**, and treat any
+future plan showing a replacement of a stateful Databricks resource as a stop
+signal rather than something to push through.
+
+This is the entire reason the checklist below leads with "zero destroy actions".
 
 - [ ] zero `destroy` actions
 - [ ] the catalog, four schemas and volume show as **import**, not create
