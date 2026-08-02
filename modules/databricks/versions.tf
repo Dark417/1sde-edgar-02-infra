@@ -2,7 +2,7 @@
 # and looks for `hashicorp/databricks`, which does not exist. Every module that
 # uses a non-HashiCorp provider has to name its source.
 terraform {
-  required_version = ">= 1.9"
+  required_version = ">= 1.10"
 
   required_providers {
     databricks = {

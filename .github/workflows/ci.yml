@@ -1,4 +1,4 @@
-name: ci
+﻿name: ci
 
 # `apply` is NEVER automatic — not on merge to main, not on tag. This repo can
 # delete your data; a human presses the button (AGENTS.md §8).
@@ -17,7 +17,7 @@ permissions:
   pull-requests: write # to comment the plan
 
 env:
-  TF_VERSION: "1.9.8"
+  TF_VERSION: "1.10.4"
   # Must match the Unity Catalog metastore's region (AGENTS.global.md law 11).
   # This is the account Terraform provisions into; a mismatch here builds every
   # bucket a region away from the workspace that reads them.

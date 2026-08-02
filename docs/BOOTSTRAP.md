@@ -5,16 +5,24 @@ holds its own state, because it would have to write the state of that creation
 somewhere — and that somewhere is the bucket it has not made yet. The lock table
 has the same problem.
 
-So exactly four things in this project are created by hand and are **not** under
-Terraform management. That number should never grow. Anything else you find
-yourself creating in the console is a bug in this repo, not a bootstrap step.
+So exactly **three** things in this project are created by hand and are **not**
+under Terraform management. That number should never grow. Anything else you
+find yourself creating in the console is a bug in this repo, not a bootstrap
+step.
 
 | Resource | Why it is manual |
 |---|---|
 | `edgar-lakehouse-tfstate-$ACCT` S3 bucket | Holds the state of everything else |
-| `edgar-lakehouse-tflock` DynamoDB table | Guards concurrent applies against that state |
 | `/edgar-lakehouse/databricks/pat` secret | A secret *value* in Terraform would land in state (rule 5) |
 | `/edgar-lakehouse/sec/user-agent` secret | Same |
+
+It used to be four. **State locking no longer needs a DynamoDB table**: the
+backend sets `use_lockfile = true`, which takes the lock by conditionally
+writing a `.tflock` object next to the state file in the same bucket.
+`dynamodb_table` was deprecated once Terraform 1.10 shipped that mechanism and
+1.11 marked it for removal. This requires **Terraform >= 1.10 everywhere**,
+including the CI pin — an older binary silently ignores `use_lockfile` and runs
+with no locking at all, which is worse than the DynamoDB table it replaced.
 
 ## 0. Which account, and how you reach it
 
@@ -75,12 +83,9 @@ aws s3api put-bucket-versioning --bucket "$TF_BUCKET" \
 aws s3api put-public-access-block --bucket "$TF_BUCKET" \
   --public-access-block-configuration \
   "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
-
-aws dynamodb create-table --table-name edgar-lakehouse-tflock \
-  --attribute-definitions AttributeName=LockID,AttributeType=S \
-  --key-schema AttributeName=LockID,KeyType=HASH \
-  --billing-mode PAY_PER_REQUEST
 ```
+
+That is the whole state backend. No lock table — see the note above.
 
 Versioning on the state bucket is not optional. It is the only thing standing
 between a corrupted apply and a rebuilt-from-scratch project.

@@ -38,10 +38,13 @@ resource "aws_iam_openid_connect_provider" "github" {
 
   url            = "https://token.actions.githubusercontent.com"
   client_id_list = ["sts.amazonaws.com"]
-  thumbprint_list = [
-    "6938fd4d98bab03faadb97b34396831e3780aea1",
-    "1c58a3a8518e8759bf075b76b750d4f2df264fcd",
-  ]
+
+  # No thumbprint_list. Since 2023 AWS validates token.actions.githubusercontent.com
+  # against a trusted root CA and ignores any thumbprint supplied for it, so
+  # pinning one is dead weight that rots: GitHub has rotated its intermediate
+  # before, and hardcoded thumbprints are exactly what broke people when it did.
+  # The attribute is optional in the provider; leaving it out is the maintained
+  # path.
 }
 
 data "aws_iam_policy_document" "oidc_trust" {
@@ -120,7 +123,6 @@ data "aws_iam_policy_document" "terraform" {
       "logs:*",
       "ssm:*",
       "iam:*",
-      "dynamodb:*",
       "ec2:Describe*",
       "secretsmanager:GetSecretValue",
       "secretsmanager:DescribeSecret",
