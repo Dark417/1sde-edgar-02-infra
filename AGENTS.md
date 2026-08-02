@@ -286,11 +286,15 @@ runtime, never a GitHub secret.
 
 ### 9.1 Bootstrap the state backend 🔴 (before anything)
 ```bash
-export AWS_REGION=us-east-1
-export ACCT=$(aws sts get-caller-identity --query Account --output text)
+export AWS_PROFILE=edgar
+export AWS_REGION=us-east-2   # law 11: fixed by the metastore, not a preference
+export ACCT=$(aws sts get-caller-identity --query Account --output text)   # 806168459926
 export TF_BUCKET=edgar-lakehouse-tfstate-$ACCT
 
-aws s3api create-bucket --bucket "$TF_BUCKET" --region "$AWS_REGION"
+# us-east-2 requires an explicit LocationConstraint; us-east-1 is the one region
+# that rejects it. Omitting this is the usual first-run failure.
+aws s3api create-bucket --bucket "$TF_BUCKET" --region "$AWS_REGION" \
+  --create-bucket-configuration LocationConstraint="$AWS_REGION"
 aws s3api put-bucket-versioning --bucket "$TF_BUCKET" \
   --versioning-configuration Status=Enabled
 aws s3api put-public-access-block --bucket "$TF_BUCKET" \

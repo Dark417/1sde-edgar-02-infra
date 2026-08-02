@@ -18,7 +18,10 @@ permissions:
 
 env:
   TF_VERSION: "1.9.8"
-  AWS_REGION: us-east-1
+  # Must match the Unity Catalog metastore's region (AGENTS.global.md law 11).
+  # This is the account Terraform provisions into; a mismatch here builds every
+  # bucket a region away from the workspace that reads them.
+  AWS_REGION: us-east-2
 
 jobs:
   static:
