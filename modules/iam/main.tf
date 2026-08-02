@@ -71,10 +71,28 @@ data "aws_iam_policy_document" "oidc_trust" {
     # Scoped to one repository. A bare "*" here would let any repository in any
     # GitHub account assume this role — that is the finding, not the ":*" suffix,
     # which merely allows any branch or tag WITHIN this repository.
+    #
+    # TWO patterns, because GitHub now issues ID-qualified subject claims. The
+    # observed claim from a real run was:
+    #
+    #   repo:Dark417@8498516/1sde-edgar-02-infra@1318930730:pull_request
+    #
+    # not the documented `repo:owner/name:ref`. The numeric owner and repository
+    # IDs are appended precisely so that renaming a repo cannot be used to
+    # inherit another repo's trust — which matters here, since these repos have
+    # already been renamed twice. Matching only the classic form fails closed
+    # with "Not authorized to perform sts:AssumeRoleWithWebIdentity", which names
+    # neither the claim nor the mismatch and is a genuinely awful thing to debug.
+    #
+    # `@*` widens only the numeric ID; the owner and repository NAMES stay
+    # pinned, so this is no weaker than the single-pattern version.
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_owner}/${each.value}:*"]
+      values = [
+        "repo:${var.github_owner}/${each.value}:*",
+        "repo:${var.github_owner}@*/${each.value}@*:*",
+      ]
     }
   }
 }
@@ -111,6 +129,12 @@ resource "aws_iam_role" "terraform" {
   assume_role_policy = data.aws_iam_policy_document.terraform_trust.json
 }
 
+#trivy:ignore:AVD-AWS-0345
+# The s3:* finding is accepted for this role only. It is the provisioning
+# identity: it creates and destroys the buckets, so it cannot be scoped to ARNs
+# that do not exist until it makes them. Blast radius is bounded instead by the
+# trust policy, which admits only the account root and repo 2's CI role, and by
+# the raw bucket's own policy, which denies deletes to everyone else.
 data "aws_iam_policy_document" "terraform" {
   # Service-scoped rather than PowerUserAccess. Rule 8 forbids broad AWS managed
   # policies, so this enumerates the services this project actually provisions.

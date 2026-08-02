@@ -47,6 +47,13 @@ resource "aws_security_group" "task" {
   # that makes outbound calls and exits.
 }
 
+#trivy:ignore:AVD-AWS-0104
+# Unrestricted egress is accepted deliberately. The destinations are sec.gov
+# plus several AWS service endpoints, none of which publish stable CIDRs — an
+# allowlist would break whenever SEC's CDN moves, and pinning AWS ranges would
+# mean VPC endpoints at roughly $7/month each for a batch job that runs 25
+# minutes a day. The control that matters is inbound, and this security group
+# has no ingress rules at all.
 resource "aws_vpc_security_group_egress_rule" "https" {
   security_group_id = aws_security_group.task.id
   description       = "HTTPS to sec.gov, S3, Secrets Manager, SSM and Databricks."
