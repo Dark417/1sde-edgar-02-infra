@@ -476,6 +476,39 @@ data "aws_iam_policy_document" "ingest_ci" {
 
     resources = [local.ssm_path_arn]
   }
+
+  statement {
+    sid    = "UpdateTaskDefinition"
+    effect = "Allow"
+
+    actions = [
+      "ecs:DescribeTaskDefinition",
+      "ecs:RegisterTaskDefinition",
+    ]
+
+    # allow-wildcard-resource: neither action supports resource-level scoping —
+    # Describe addresses a family by name, Register creates the new revision.
+    resources = ["*"]
+  }
+
+  # Registering a revision re-submits the task and execution role ARNs, which
+  # requires permission to pass exactly those two roles — and only to ECS.
+  statement {
+    sid     = "PassTaskRolesToEcs"
+    effect  = "Allow"
+    actions = ["iam:PassRole"]
+
+    resources = [
+      aws_iam_role.ingest_task.arn,
+      aws_iam_role.ingest_execution.arn,
+    ]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["ecs-tasks.amazonaws.com"]
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "ingest_ci" {
