@@ -23,9 +23,6 @@
 #             TF_VAR_allowed_account_ids, from GitHub secrets. Nothing here
 #             overrides them because they are not declared in this file.
 
-# Exact repo-4 wheel version. Bump this to roll the job forward; never "latest".
-pipelines_wheel_version = "0.1.0"
-
 # Matches the Databricks metastore region (metastore_aws_us_east_2).
 aws_region = "us-east-2"
 

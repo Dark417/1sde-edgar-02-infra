@@ -164,8 +164,9 @@ def test_schedule_defaults_to_disabled() -> None:
     schedule = (REPO_ROOT / "modules" / "schedule" / "main.tf").read_text(encoding="utf-8")
     assert 'var.schedule_enabled ? "ENABLED" : "DISABLED"' in schedule
 
-    databricks = (REPO_ROOT / "modules" / "databricks" / "main.tf").read_text(encoding="utf-8")
-    assert 'var.job_schedule_enabled ? "UNPAUSED" : "PAUSED"' in databricks
+    # The Databricks job's pause state is no longer asserted here: the job moved
+    # to repo 4's Asset Bundle on 2026-08-02, so its schedule is repo 4's to
+    # keep paused. See test_no_databricks_job_here for the replacement check.
 
 
 # ---------------------------------------------------------------------------
@@ -217,25 +218,28 @@ def test_modules_do_not_call_other_modules() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_job_graph_peak_concurrency_within_free_edition_cap() -> None:
-    """Compute the real peak width of the DAG rather than trusting a comment."""
-    databricks = (REPO_ROOT / "modules" / "databricks" / "main.tf").read_text(encoding="utf-8")
-    block = databricks.split("tasks = {")[1].split("\n  }")[0]
+def test_no_databricks_job_here() -> None:
+    """The job definition belongs to repo 4's Asset Bundle, not to this repo.
 
-    deps: dict[str, list[str]] = {}
-    for line in block.strip().splitlines():
-        key, _, rest = line.partition("=")
-        names_in = re.findall(r'"([a-z_]+)"', rest)
-        deps[key.strip()] = names_in
+    Replaces an earlier test that verified this repo's own job DAG stayed inside
+    the Free Edition concurrency cap. That test passed happily while the job it
+    checked named a package that did not exist, six entry points against a single
+    real dispatcher, and six tasks against four — it validated the shape of a
+    graph nobody could run.
 
-    # Longest-path depth per task; tasks at equal depth can run together.
-    def depth(task: str) -> int:
-        return 0 if not deps[task] else 1 + max(depth(d) for d in deps[task])
-
-    widths: dict[int, int] = {}
-    for task in deps:
-        widths[depth(task)] = widths.get(depth(task), 0) + 1
-
-    peak = max(widths.values())
-    assert peak <= 3, f"peak concurrency {peak} exceeds the Free Edition headroom"
-    assert len(deps) == 6, f"expected the 6-task medallion graph, found {len(deps)}"
+    A Databricks job's tasks name the package, entry point and parameters, so
+    declaring one here restates repo 4's internals across a repo boundary. The
+    only durable check is that this repo declares no job at all; whether the
+    graph fits Free Edition is repo 4's test to own, next to the code it
+    describes.
+    """
+    hits = [
+        f"{_rel(p)}:{i}"
+        for p in TF_FILES
+        for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
+        if re.match(r'^\s*resource\s+"databricks_job"', _code_only(line))
+    ]
+    assert not hits, (
+        "databricks_job belongs to repo 4's bundle (root AGENTS.md law 2). "
+        f"Found: {hits}"
+    )

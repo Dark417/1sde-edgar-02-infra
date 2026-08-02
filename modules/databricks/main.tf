@@ -120,84 +120,29 @@ resource "databricks_grants" "wheels_volume" {
 }
 
 # ---------------------------------------------------------------------------
-# Daily medallion job
+# NO databricks_job HERE. The job definition belongs to repo 4's Asset Bundle.
 #
-#   bronze_all ──► silver_filing ──┬──► silver_company ──┐
-#                                  └──► silver_fact ─────┴──► gold_all ──► export_serving
+# This module owned a `databricks_job.daily` until 2026-08-02. It was removed
+# because it could not work, and the reason generalises:
 #
-# Peak concurrency is 2 (silver_company alongside silver_fact), well inside the
-# Free Edition cap of 5 concurrent tasks.
+# An ECS task definition references its image by URI, so repo 2 can declare the
+# container without knowing anything about the code inside it. A Databricks job
+# has no such seam — its tasks name the package, the entry point, the parameters
+# and the dependency edges. That IS the code's interface, so declaring it here
+# means restating repo 4's internals from another repository.
 #
-# The bronze_all ──► gold_all edge drawn in AGENTS.md §6 F-6 is omitted: it is
-# transitively implied by the path through silver, and a redundant edge in a task
-# graph is noise that hides the real dependency structure.
+# Restating them went exactly as you would expect. Every field was wrong:
+#
+#   declared here                          repo 4 actually ships
+#   -------------------------------------  -----------------------------------
+#   wheel edgar_lakehouse_pipelines-*.whl  edgar_pipelines
+#   package_name edgar_lakehouse_pipelines edgar_pipelines
+#   6 entry points (bronze_all, ...)       one dispatcher, `edgar-pipelines <task>`
+#   6 tasks                                4 (bronze_ingest ... serving_export)
+#
+# The job was live and would have failed on its first run. Asset Bundles exist
+# precisely so the task graph lives beside the code that implements it.
+#
+# What this module still owns for repo 4: the `wheels` volume below, which is
+# where the bundle publishes its artifact.
 # ---------------------------------------------------------------------------
-locals {
-  wheel = "${var.wheel_dir}/edgar_lakehouse_pipelines-${var.wheel_version}-py3-none-any.whl"
-
-  package_name = "edgar_lakehouse_pipelines"
-
-  # task_key -> list of task_keys it depends on.
-  tasks = {
-    bronze_all     = []
-    silver_filing  = ["bronze_all"]
-    silver_company = ["silver_filing"]
-    silver_fact    = ["silver_filing"]
-    gold_all       = ["silver_company", "silver_fact"]
-    export_serving = ["gold_all"]
-  }
-}
-
-resource "databricks_job" "daily" {
-  name        = var.job_name
-  description = "bronze -> silver -> gold -> Parquet export. Wheel pinned to ${var.wheel_version}."
-
-  # Serverless. Free Edition offers no other compute, and no DLT.
-  environment {
-    environment_key = "default"
-
-    spec {
-      client = "1"
-
-      # Pinned by exact filename. There is no way to express "latest" here, which
-      # is the point (global rule 1).
-      dependencies = [local.wheel]
-    }
-  }
-
-  dynamic "task" {
-    for_each = local.tasks
-
-    content {
-      task_key        = task.key
-      environment_key = "default"
-
-      dynamic "depends_on" {
-        for_each = task.value
-
-        content {
-          task_key = depends_on.value
-        }
-      }
-
-      python_wheel_task {
-        package_name = local.package_name
-        entry_point  = task.key
-      }
-    }
-  }
-
-  # A second concurrent run would have two writers doing MERGE against the same
-  # silver tables. Queue instead.
-  max_concurrent_runs = 1
-
-  queue {
-    enabled = true
-  }
-
-  schedule {
-    quartz_cron_expression = var.job_schedule_expression
-    timezone_id            = "UTC"
-    pause_status           = var.job_schedule_enabled ? "UNPAUSED" : "PAUSED"
-  }
-}

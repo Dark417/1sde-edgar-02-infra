@@ -103,13 +103,9 @@ module "databricks" {
   volume_name         = local.volume_name
   workspace_principal = var.workspace_principal
 
-  wheel_dir     = var.pipelines_wheel_dir
-  wheel_version = var.pipelines_wheel_version
-  job_name      = "${local.name_prefix}-daily"
-
-  # Same switch as the EventBridge schedule: nothing runs on a timer until a
-  # human has watched it run by hand.
-  job_schedule_enabled = var.schedule_enabled
+  # No job inputs. The job definition moved to repo 4's Asset Bundle — see the
+  # note in modules/databricks/main.tf for why a Databricks job cannot be
+  # declared from here the way an ECS task definition can.
 }
 
 module "params" {
@@ -125,5 +121,4 @@ module "params" {
   landing_mode      = var.landing_mode
   oidc_role_arns    = module.iam.oidc_role_arns
   ecs_family        = module.compute.family
-  databricks_job_id = module.databricks.job_id
 }

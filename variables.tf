@@ -96,24 +96,6 @@ variable "warehouse_id" {
   type        = string
 }
 
-variable "pipelines_wheel_version" {
-  description = <<-EOT
-    Exact version of the repo-4 wheel each job task installs. Pinned with `==`
-    semantics by construction — there is no way to express "latest" here, which
-    is the point (global rule 1).
-  EOT
-  type        = string
-}
-
-variable "pipelines_wheel_dir" {
-  description = <<-EOT
-    Volume directory that repo 4's CI uploads its wheel into. Job tasks install
-    from here because the package is private and not on PyPI.
-  EOT
-  type        = string
-  default     = "/Volumes/edgar/landing/wheels"
-}
-
 # --- Ingest / SEC -----------------------------------------------------------
 
 variable "sec_user_agent_secret_name" {
