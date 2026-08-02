@@ -18,11 +18,6 @@ variable "raw_bucket" {
   type        = string
 }
 
-variable "serving_bucket" {
-  description = "Serving bucket NAME (not ARN)."
-  type        = string
-}
-
 variable "log_group_name" {
   description = "CloudWatch log group name; its ARN is constructed here."
   type        = string

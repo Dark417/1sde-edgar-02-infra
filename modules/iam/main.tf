@@ -7,8 +7,11 @@ locals {
   region    = data.aws_region.current.name
   partition = data.aws_partition.current.partition
 
-  raw_bucket_arn     = "arn:${local.partition}:s3:::${var.raw_bucket}"
-  serving_bucket_arn = "arn:${local.partition}:s3:::${var.serving_bucket}"
+  raw_bucket_arn = "arn:${local.partition}:s3:::${var.raw_bucket}"
+
+  # No serving_bucket_arn. Repo 5's read access to the serving bucket is granted
+  # resource-side, by the bucket policy in modules/storage, not identity-side
+  # here — so IAM never needs that ARN.
 
   # Constructed rather than taken as a module output. The names are deterministic
   # locals in the root module, so these ARNs are knowable before the resources
