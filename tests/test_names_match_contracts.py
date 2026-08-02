@@ -13,6 +13,7 @@ renamed fin -> edgar and every one of these constants moved at once.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -88,3 +89,36 @@ def test_volume_path_is_consistent_with_its_parts(mirrored: dict[str, Any]) -> N
     """
     expected = f"/Volumes/{mirrored['catalog']}/{mirrored['schema_landing']}/"
     assert mirrored["volume_landing"].startswith(expected)
+
+
+def test_published_ssm_parameters_match_the_contract_exactly() -> None:
+    """This repo publishes exactly the SSM keys the contract declares.
+
+    The contract gained SSM_PUBLISHED in 1.2.0 because nothing owned the key
+    names before, and it showed: this repo published `dbx/volume_path`, repo 3
+    read that name, and repo 4 independently invented `dbx/landing_volume` for
+    the same value — then read a key that was never published. It failed
+    silently, because repo 4 falls back to a default on a miss.
+
+    Exact set equality in both directions: a key published here that the
+    contract does not declare is a private interface pretending to be public,
+    and a declared key not published here is a runtime ParameterNotFound waiting
+    for the first consumer without a fallback.
+
+    The per-repo oidc_role_arn keys are validated against the contract's
+    builder rather than the frozenset, since their count follows the repo list.
+    """
+    params_tf = (REPO_ROOT / "modules" / "params" / "main.tf").read_text(encoding="utf-8")
+
+    published = set(re.findall(r'"(/edgar-lakehouse/[a-z0-9_/]+)"', params_tf))
+    oidc_published = {p for p in published if "/iam/oidc_role_arn" in p}
+    flat_published = published - oidc_published
+
+    assert flat_published == set(names.SSM_PUBLISHED), (
+        "modules/params must publish exactly names.SSM_PUBLISHED.\n"
+        f"  published but not declared: {sorted(flat_published - set(names.SSM_PUBLISHED))}\n"
+        f"  declared but not published: {sorted(set(names.SSM_PUBLISHED) - flat_published)}"
+    )
+
+    # The oidc parameter path in the tf must match the contract's builder.
+    assert names.ssm_oidc_role_arn("X").rsplit("/", 1)[0] in params_tf
