@@ -16,6 +16,13 @@ resource "aws_s3_bucket_versioning" "raw" {
   }
 }
 
+#trivy:ignore:AWS-0132
+# SSE-S3 (AES256), not a customer-managed KMS key. This is encryption at rest
+# either way; the finding is about key ownership. A CMK costs $1/month plus
+# per-request charges, and two of them would roughly double this project's
+# entire ~$1-3/month bill for a public-data lakehouse with no regulatory
+# requirement for customer-held keys. A compliance context would change this
+# answer, and nothing else about the configuration.
 resource "aws_s3_bucket_server_side_encryption_configuration" "raw" {
   bucket = aws_s3_bucket.raw.id
   rule {
@@ -133,6 +140,10 @@ resource "aws_s3_bucket_versioning" "serving" {
   }
 }
 
+#trivy:ignore:AWS-0132
+# Same reasoning as the raw bucket above: SSE-S3 rather than a customer-managed
+# key, because a CMK's fixed monthly cost is out of proportion to a demo holding
+# public SEC data.
 resource "aws_s3_bucket_server_side_encryption_configuration" "serving" {
   bucket = aws_s3_bucket.serving.id
   rule {

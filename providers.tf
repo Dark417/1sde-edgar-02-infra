@@ -34,11 +34,10 @@ provider "aws" {
   }
 }
 
-# Ambient account context. Used to construct ARNs for resources this root module
-# grants access to but does not itself create.
-data "aws_caller_identity" "current" {}
-
-data "aws_partition" "current" {}
+# No aws_caller_identity / aws_partition here. They were added for constructing
+# ARNs at root, but the root module builds none — every ARN is constructed inside
+# the module that needs it, from that module's own lookups. tflint caught both as
+# unused on the first CI run.
 
 # Secret VALUES are created by hand (AGENTS.md §9.2) and referenced as data
 # sources. Writing an `aws_secretsmanager_secret_version` *resource* would put the

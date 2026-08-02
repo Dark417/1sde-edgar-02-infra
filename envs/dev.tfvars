@@ -39,8 +39,10 @@ env         = "dev"
 # repo 1 docs/ADR-001-landing-transport.md.
 landing_mode = "volume"
 
-# Pinned repo-1 wheel.
-contracts_version = "0.1.0"
+# Pinned repo-1 wheel. Must match the version actually published to
+# s3://<state-bucket>/wheels/ — repos 3-5 read this from SSM and install exactly
+# it, so a stale pin here is an install failure everywhere downstream.
+contracts_version = "1.1.0"
 
 # Rule 4. Stays false until repo 4 has run successfully by hand (§9.9).
 schedule_enabled = false

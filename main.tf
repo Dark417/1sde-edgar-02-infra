@@ -23,9 +23,10 @@ module "iam" {
   github_owner = var.github_owner
   github_repos = local.github_repos
 
-  # Names, not module outputs — see the cycle note above.
+  # Names, not module outputs — see the cycle note above. The serving bucket is
+  # absent deliberately: repo 5's read access is granted by that bucket's policy
+  # in modules/storage, so IAM has no use for it.
   raw_bucket     = local.raw_bucket
-  serving_bucket = local.serving_bucket
   log_group_name = local.log_group_name
   ecs_family     = local.ecs_family
   ecs_cluster    = local.ecs_cluster

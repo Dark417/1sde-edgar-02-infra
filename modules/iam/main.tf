@@ -7,8 +7,11 @@ locals {
   region    = data.aws_region.current.name
   partition = data.aws_partition.current.partition
 
-  raw_bucket_arn     = "arn:${local.partition}:s3:::${var.raw_bucket}"
-  serving_bucket_arn = "arn:${local.partition}:s3:::${var.serving_bucket}"
+  raw_bucket_arn = "arn:${local.partition}:s3:::${var.raw_bucket}"
+
+  # No serving_bucket_arn. Repo 5's read access to the serving bucket is granted
+  # resource-side, by the bucket policy in modules/storage, not identity-side
+  # here — so IAM never needs that ARN.
 
   # Constructed rather than taken as a module output. The names are deterministic
   # locals in the root module, so these ARNs are knowable before the resources
@@ -68,10 +71,28 @@ data "aws_iam_policy_document" "oidc_trust" {
     # Scoped to one repository. A bare "*" here would let any repository in any
     # GitHub account assume this role — that is the finding, not the ":*" suffix,
     # which merely allows any branch or tag WITHIN this repository.
+    #
+    # TWO patterns, because GitHub now issues ID-qualified subject claims. The
+    # observed claim from a real run was:
+    #
+    #   repo:Dark417@8498516/1sde-edgar-02-infra@1318930730:pull_request
+    #
+    # not the documented `repo:owner/name:ref`. The numeric owner and repository
+    # IDs are appended precisely so that renaming a repo cannot be used to
+    # inherit another repo's trust — which matters here, since these repos have
+    # already been renamed twice. Matching only the classic form fails closed
+    # with "Not authorized to perform sts:AssumeRoleWithWebIdentity", which names
+    # neither the claim nor the mismatch and is a genuinely awful thing to debug.
+    #
+    # `@*` widens only the numeric ID; the owner and repository NAMES stay
+    # pinned, so this is no weaker than the single-pattern version.
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_owner}/${each.value}:*"]
+      values = [
+        "repo:${var.github_owner}/${each.value}:*",
+        "repo:${var.github_owner}@*/${each.value}@*:*",
+      ]
     }
   }
 }
@@ -89,8 +110,21 @@ resource "aws_iam_role" "oidc" {
 # ---------------------------------------------------------------------------
 data "aws_iam_policy_document" "terraform_trust" {
   statement {
-    effect  = "Allow"
-    actions = ["sts:AssumeRole"]
+    effect = "Allow"
+
+    # sts:TagSession alongside sts:AssumeRole. aws-actions/configure-aws-credentials
+    # attaches session tags (repository, workflow, actor, ref) on every assume,
+    # and when role-chaining that means the *source* role must be permitted to
+    # tag. Without it, chaining fails with "not authorized to perform:
+    # sts:TagSession", which reads like a trust problem and is not one.
+    #
+    # Permitting it rather than disabling tagging is the better trade: those tags
+    # land in CloudTrail, so an audit of who applied what shows the workflow and
+    # commit rather than an anonymous assumed-role session.
+    actions = [
+      "sts:AssumeRole",
+      "sts:TagSession",
+    ]
 
     principals {
       type = "AWS"
@@ -108,6 +142,12 @@ resource "aws_iam_role" "terraform" {
   assume_role_policy = data.aws_iam_policy_document.terraform_trust.json
 }
 
+#trivy:ignore:AWS-0345
+# The s3:* finding is accepted for this role only. It is the provisioning
+# identity: it creates and destroys the buckets, so it cannot be scoped to ARNs
+# that do not exist until it makes them. Blast radius is bounded instead by the
+# trust policy, which admits only the account root and repo 2's CI role, and by
+# the raw bucket's own policy, which denies deletes to everyone else.
 data "aws_iam_policy_document" "terraform" {
   # Service-scoped rather than PowerUserAccess. Rule 8 forbids broad AWS managed
   # policies, so this enumerates the services this project actually provisions.

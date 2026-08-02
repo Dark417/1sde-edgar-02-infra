@@ -52,9 +52,21 @@ terraform apply tf.plan
 
 ## Safety posture
 
-`apply` is never automatic — not on merge to `main`, not on tag. The workflow is
-`workflow_dispatch` only and requires you to type `apply` to confirm. The PR
-pipeline additionally fails if the plan contains any destroy action.
+`apply` runs automatically when a pull request merges to `main` — but the apply
+job **re-plans against current state and aborts on any destroy or replace**
+before it touches anything.
+
+That guard is the entire safety argument, and it is worth being precise about
+why. The reviewed plan on the PR is what authorises the merge, but state can
+move between review and merge: a concurrent apply, a console change, a drifted
+resource. So the apply job discards the PR's plan and produces its own. If that
+plan would destroy or replace anything, the job fails and waits for a human,
+because on this project a destroy means dropping a catalog with 13
+Liquibase-managed tables inside it.
+
+`workflow_dispatch` remains available for out-of-band applies — drift
+correction, or re-running after a manual change — and still requires typing
+`apply` to confirm. Both paths are gated on the `dev` GitHub environment.
 
 `schedule_enabled` defaults to `false`, and both the EventBridge schedule and
 the Databricks job are created dormant. An enabled schedule pointing at unproven

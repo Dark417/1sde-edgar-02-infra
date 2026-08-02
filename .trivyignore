@@ -1,0 +1,44 @@
+# Accepted misconfiguration findings.
+#
+# Each entry is a conscious trade-off, not a silenced alarm. The reasoning also
+# lives inline next to the resource it applies to; this file is what trivy
+# actually reads. Anything added here needs a justification good enough to say
+# out loud in a review.
+
+# ---------------------------------------------------------------------------
+# AWS-0104 (CRITICAL) — Security group rule allows unrestricted egress
+#
+# modules/compute: the ingest task talks to sec.gov plus S3, Secrets Manager and
+# SSM. None of those publish stable CIDRs — an allowlist breaks whenever SEC's
+# CDN moves, and pinning AWS ranges properly would mean VPC endpoints at roughly
+# $7/month each for a batch job that runs 25 minutes a day.
+#
+# The control that actually matters here is inbound, and this security group has
+# NO ingress rules at all. Egress-only from a task that starts, works and exits.
+AWS-0104
+
+# ---------------------------------------------------------------------------
+# AWS-0345 (HIGH) — IAM role uses a policy that allows 's3:*'
+#
+# modules/iam, the Terraform provisioning role only. It creates and destroys the
+# project's buckets, so it cannot be scoped to ARNs that do not exist until it
+# makes them. Blast radius is bounded elsewhere: the trust policy admits only
+# the account root and repo 2's CI role, and the raw bucket's own policy denies
+# deletes to every principal except this one.
+#
+# Note the ingest task role — the one that actually runs untrusted-ish code — is
+# scoped to s3:PutObject on a single prefix and is not covered by this ignore.
+AWS-0345
+
+# ---------------------------------------------------------------------------
+# AWS-0132 (HIGH) ×2 — Bucket does not encrypt data with a customer managed key
+#
+# modules/storage, both buckets. They ARE encrypted at rest with SSE-S3
+# (AES256); the finding is about who owns the key, not whether encryption
+# exists. A customer-managed KMS key costs $1/month each plus per-request
+# charges, and two would roughly double this project's entire ~$1-3/month bill.
+#
+# The data is public SEC filings. There is no regulatory requirement for
+# customer-held keys here. A compliance context would change this decision and
+# nothing else about the configuration.
+AWS-0132

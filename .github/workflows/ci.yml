@@ -1,9 +1,16 @@
 ﻿name: ci
 
-# `apply` is NEVER automatic — not on merge to main, not on tag. This repo can
-# delete your data; a human presses the button (AGENTS.md §8).
+# Apply runs automatically on merge to main, but ONLY behind a re-plan that
+# aborts on any destroy or replace (see the `apply` job). The reviewed plan on
+# the PR is what authorises the merge; the guard is what stops a stale or
+# drifted plan from doing damage between review and merge.
+#
+# workflow_dispatch is kept for out-of-band applies — drift correction, or
+# re-running after a manual change — and still requires typing "apply".
 on:
   pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       confirm:
@@ -17,11 +24,24 @@ permissions:
   pull-requests: write # to comment the plan
 
 env:
+  # Must be >= 1.10: the S3 backend uses use_lockfile, and an older binary
+  # silently ignores it and runs with NO locking at all.
   TF_VERSION: "1.10.4"
   # Must match the Unity Catalog metastore's region (AGENTS.global.md law 11).
-  # This is the account Terraform provisions into; a mismatch here builds every
-  # bucket a region away from the workspace that reads them.
   AWS_REGION: us-east-2
+
+  # Everything identifying is a SECRET, not a variable. This repo is public, so
+  # its Actions logs are public — and GitHub masks secrets in log output while
+  # variables appear verbatim. Both role ARNs and the state bucket name embed
+  # the AWS account id, so `vars.` would republish exactly what the Tier-2
+  # scrubbing removed from the tree.
+  #
+  # TF_VAR_* is the LOWEST-precedence source, which is why envs/dev.tfvars must
+  # omit these rather than stub them — a placeholder there would silently win.
+  TF_VAR_databricks_host: ${{ secrets.TF_VAR_DATABRICKS_HOST }}
+  TF_VAR_warehouse_id: ${{ secrets.TF_VAR_WAREHOUSE_ID }}
+  TF_VAR_allowed_account_ids: ${{ secrets.TF_VAR_ALLOWED_ACCOUNT_IDS }}
+  TF_VAR_workspace_principal: ${{ secrets.TF_VAR_WORKSPACE_PRINCIPAL }}
 
 jobs:
   static:
@@ -31,7 +51,17 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Secret scan (Tier-1/Tier-2 leak gate, root AGENTS.md)
-        run: bash scripts/secret-scan.sh
+        run: |
+          # Tier-2 literals are deliberately not committed, so reconstruct them
+          # from secrets — otherwise the scan silently skips those checks.
+          cat > scripts/tier2.env <<EOF
+          AWS_ACCOUNT_ID=${{ secrets.TIER2_AWS_ACCOUNT_ID }}
+          METASTORE_ID=${{ secrets.TIER2_METASTORE_ID }}
+          DBX_WORKSPACE_ID=${{ secrets.TIER2_DBX_WORKSPACE_ID }}
+          WAREHOUSE_ID=${{ secrets.TIER2_WAREHOUSE_ID }}
+          MEMBER_ROOT_EMAIL=${{ secrets.TIER2_MEMBER_ROOT_EMAIL }}
+          EOF
+          bash scripts/secret-scan.sh
 
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -54,10 +84,19 @@ jobs:
       - name: tflint
         run: tflint --recursive
 
-      - name: tfsec
-        uses: aquasecurity/tfsec-action@v1.0.3
+      # Trivy, not tfsec. tfsec is end-of-life — it prints "tfsec is joining the
+      # Trivy family" on every run — and its parser predates Terraform `import`
+      # blocks, so it aborted with "Blocks of type import are not expected here"
+      # rather than scanning anything. Trivy is the maintained successor and
+      # understands current HCL.
+      - name: trivy (IaC misconfiguration scan)
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
-          soft_fail: false
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          trivyignores: .trivyignore
 
   gates:
     name: forbidden-resource gates
@@ -109,15 +148,18 @@ jobs:
         with:
           python-version: "3.11"
 
+      # Federate as this repo's OIDC role. It carries only wheel read plus the
+      # right to assume the Terraform role — provisioning rights are never
+      # attached to the CI identity itself.
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       # pip cannot read s3:// URLs, so the wheel is fetched first (AGENTS.md 9.4).
       - name: Fetch the contracts wheel
         run: |
-          aws s3 cp "s3://${{ vars.TF_STATE_BUCKET }}/wheels/" /tmp/wheels/ --recursive
+          aws s3 cp "s3://${{ secrets.TF_STATE_BUCKET }}/wheels/" /tmp/wheels/ --recursive
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt --find-links /tmp/wheels/
 
@@ -138,22 +180,30 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      # Chain into the Terraform role, which is where provisioning rights live.
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.TF_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-chaining: true
+
       - name: terraform init
-        run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+        run: terraform init -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}"
 
+      # -var 'aws_profile=' overrides the local-developer profile in dev.tfvars.
+      # CI authenticates by OIDC and has no AWS profiles configured.
       - name: terraform plan
-        id: plan
-        run: terraform plan -var-file=envs/dev.tfvars -no-color -out=tf.plan | tee plan.txt
+        run: |
+          terraform plan -var-file=envs/dev.tfvars -var 'aws_profile=' \
+            -no-color -out=tf.plan | tee plan.txt
 
-      # Fails the PR if the plan would destroy anything. On this project a
-      # destroy means dropping a catalog Liquibase built 13 tables inside.
       - name: Refuse plans containing destroy actions
         run: |
-          if grep -qE '^\s*# .* will be destroyed' plan.txt; then
-            echo "::error::Plan contains destroy actions. Review by hand before proceeding."
+          if grep -qE '^\s*# .* (will be destroyed|must be replaced)' plan.txt; then
+            echo "::error::Plan contains destroy or replace actions. Review by hand."
             exit 1
           fi
 
@@ -171,10 +221,14 @@ jobs:
             });
 
   apply:
-    name: apply (manual only)
-    if: github.event_name == 'workflow_dispatch' && inputs.confirm == 'apply'
+    name: apply
+    # Automatic on merge to main; manual dispatch still requires typing "apply".
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.confirm == 'apply')
     runs-on: ubuntu-latest
-    environment: dev # requires the reviewer configured on the GitHub environment
+    needs: [static, gates, tests]
+    environment: dev
     steps:
       - uses: actions/checkout@v4
 
@@ -184,11 +238,36 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.TF_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-chaining: true
+
       - name: terraform init
-        run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+        run: terraform init -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}"
+
+      # Re-plan rather than trusting the PR's artifact. The plan reviewed on the
+      # PR authorised the merge, but state can move between review and merge —
+      # another apply, a console change, a drifted resource. This plan is the
+      # one that actually runs.
+      - name: terraform plan
+        run: |
+          terraform plan -var-file=envs/dev.tfvars -var 'aws_profile=' \
+            -no-color -out=tf.plan | tee plan.txt
+
+      # The guard that makes auto-apply safe. A destroy here means dropping a
+      # catalog Liquibase built 13 tables inside, so the job stops and waits for
+      # a human rather than converging.
+      - name: Abort on destroy or replace
+        run: |
+          if grep -qE '^\s*# .* (will be destroyed|must be replaced)' plan.txt; then
+            echo "::error::Plan would destroy or replace a resource. Auto-apply refuses; review, then run workflow_dispatch."
+            exit 1
+          fi
 
       - name: terraform apply
-        run: terraform apply -var-file=envs/dev.tfvars -auto-approve
+        run: terraform apply -no-color tf.plan
