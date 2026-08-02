@@ -295,3 +295,73 @@ silently drops something the other tool thinks it manages.
 5. **Set GitHub repo variables** `AWS_ROLE_ARN` and `TF_STATE_BUCKET`. CI will
    fail until both exist — a bootstrap ordering problem, not a broken pipeline.
 6. **Repos 3 → 4 → 5.** Repo 3 currently contains only a `.git` directory.
+
+---
+
+## 12. First apply — outcome (2026-08-01)
+
+**APPLIED SUCCESSFULLY.** 68 resources; second plan reports `No changes` with
+`-detailed-exitcode 0`, satisfying the idempotency requirement in section 11 of
+`AGENTS.md`. All 13 Liquibase tables verified intact after the catalog import.
+
+Live state: catalog `edgar` + 4 schemas + 2 volumes imported/created, job
+`936956363804387` PAUSED, EventBridge schedule DISABLED, 15 SSM parameters,
+3 buckets, 9 IAM roles, ECR repo, ECS cluster + task definition revision 1.
+
+### Audit findings, applied
+
+Reviewing every resource for necessity found four real problems, not just
+cosmetics:
+
+1. **`AmazonECSTaskExecutionRolePolicy` removed.** Verified against the API, its
+   document grants ECR pull and CloudWatch Logs on `Resource: "*"`. Attaching it
+   next to an inline policy that carefully scopes those same actions to one
+   repository and one log group made the scoping decorative. The inline policy
+   already covers everything the task needs. Confirmed post-apply: the execution
+   role carries **no** attached managed policies.
+2. **`aws_ecs_cluster_capacity_providers` removed** — the EventBridge target
+   already sets `launch_type = "FARGATE"` on every run.
+3. **Wheel distribution grants added (6 resources).** Every repo installs
+   `edgar-lakehouse-contracts` from `s3://<state-bucket>/wheels/`, and **no role
+   had access to that prefix** — every CI run would have failed at the install
+   step with AccessDenied. Repo 1 now has PutObject (deliberately no
+   DeleteObject: a published version is immutable), all five have read.
+4. **Grants made conditional.** See below.
+
+Left in place after consideration: the 5 `oidc_role_arn` SSM parameters (CI
+cannot read them before assuming the role, so they serve humans populating
+GitHub variables) and the serving-bucket lifecycle rule.
+
+### Two failures hit during apply, and what they taught
+
+**Unity Catalog grants need ACCOUNT-level principals.** `databricks groups list`
+reports `admins` and `users`, but both are workspace-local SCIM groups and UC
+rejects them: `cannot create grants: Could not find principal with name users`.
+The commonly-cited `account users` group does not exist on Free Edition either.
+What resolves is an account user's email. The grants are now `count`-gated on a
+principal being supplied, with the value in gitignored
+`envs/dev.local.tfvars` — and they remain close to a no-op on a single-user
+workspace, since the catalog owner already holds every privilege.
+
+**Placeholders in a committed tfvars are worse than omission.** The repo went
+public, so identifying values were scrubbed to `<AWS_ACCOUNT_ID>` style
+placeholders. That broke the apply with `AWS account ID not allowed`, because
+`-var-file` **outranks** `TF_VAR_*` environment variables in Terraform's
+precedence order — a placeholder silently overrides the real value CI injects.
+The three identifying variables are now **absent** from `envs/dev.tfvars`
+entirely and supplied by a second `-var-file` locally, or `TF_VAR_*` in CI.
+An absent variable fails loudly; a placeholder fails confusingly.
+
+### Still outstanding
+
+- Revoke the old `liquibase-local` Databricks PAT (a fresh one is now in Secrets
+  Manager as `/edgar-lakehouse/databricks/pat`, minted without ever being
+  printed) and repoint `liquibase.properties` at it.
+- Enable MFA on the `806168459926` root user.
+- Set GitHub repo variables/secrets so CI can run: `AWS_ROLE_ARN`,
+  `TF_STATE_BUCKET`, plus `TF_VAR_databricks_host`, `TF_VAR_warehouse_id`,
+  `TF_VAR_allowed_account_ids`.
+- The AWS account id and workspace host are already in this repo's git history
+  from the first commit, before the repo went public. Scrubbing the working tree
+  does not remove them from history — decide whether that matters.
+- `imports.tf` can now be deleted; the objects are in state.
