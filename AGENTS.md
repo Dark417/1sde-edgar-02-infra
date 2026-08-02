@@ -273,10 +273,26 @@ only resources in the project not under Terraform, and why.
 
 ```
 on: pull_request        -> fmt, validate, tflint, tfsec, grep gates, plan (comment on PR)
-on: workflow_dispatch   -> apply   (MANUAL TRIGGER ONLY)
+on: push (main)         -> apply, behind a re-plan that aborts on destroy/replace
+on: workflow_dispatch   -> apply   (requires typing "apply")
 ```
-**`apply` is never automatic.** Not on merge to `main`, not on tag. This repo can
-delete your data; a human presses the button. Say so in the README.
+
+**`apply` is automatic on merge to `main`, and safe because of what gates it.**
+Revised 2026-08-02; this section previously forbade automatic apply entirely.
+
+The authorisation to change infrastructure is the reviewed plan on the pull
+request. What makes acting on it safe is that the apply job does **not** trust
+that plan: it re-plans against current state and aborts on any `will be
+destroyed` or `must be replaced` before applying. State can move between review
+and merge — a concurrent apply, a console change, drift — and a stale plan is
+exactly how a "reviewed" change becomes a destructive one.
+
+A destroy on this project means dropping a catalog that Liquibase built 13
+tables inside, so that guard is the whole safety argument. When it fires, the
+job stops and waits for a human rather than converging. `workflow_dispatch`
+remains for those out-of-band cases and still requires typing `apply`.
+
+Say all of this in the README.
 
 AWS auth via the OIDC role from F-2. Databricks PAT read from Secrets Manager at
 runtime, never a GitHub secret.
