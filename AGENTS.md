@@ -1,6 +1,18 @@
-# Repo 2 / 5 — `1sde-edgar-02-infra`
+# Repo 2 / 6 — `1sde-edgar-02-infra`
 
-> Copy to repo root as `AGENTS.md`. Sections 0–8 are agent instructions. Section 9 is
+> ## ⚠️ Read `AGENTS.global.md` first
+>
+> This file covers **this repo only**. The project-wide rules — repo boundaries,
+> the sensitive-values policy, the required response format, region, and the
+> cross-repo laws — live in [`AGENTS.global.md`](AGENTS.global.md) beside this
+> file, propagated from the workspace root. **Read it before acting.**
+>
+> Precedence: global rules bind everywhere; where this file and the global rules
+> genuinely conflict, this file wins **for this repo** and the conflict is worth
+> reporting rather than silently resolving.
+
+
+> Sections 0–8 are agent instructions. Section 9 is
 > yours, by hand. Section 10 is what repos 3–5 consume.
 >
 > GitHub: `github.com/Dark417/1sde-edgar-02-infra`
