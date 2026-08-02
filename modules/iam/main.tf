@@ -164,9 +164,17 @@ data "aws_iam_policy_document" "terraform" {
       "ssm:*",
       "iam:*",
       "ec2:Describe*",
+      # GetResourcePolicy is not optional despite looking like it. The
+      # `aws_secretsmanager_secret` DATA SOURCE reads the secret's resource
+      # policy as part of a normal read, so every plan needs it. Its absence was
+      # invisible until CI ran: locally this executes as an administrator role,
+      # and CI was the first identity to exercise this policy as written.
+      # ListSecretVersionIds is needed for the same reason on the version lookup.
       "secretsmanager:GetSecretValue",
       "secretsmanager:DescribeSecret",
       "secretsmanager:ListSecrets",
+      "secretsmanager:GetResourcePolicy",
+      "secretsmanager:ListSecretVersionIds",
     ]
 
     # allow-wildcard-resource: this role provisions the project's infrastructure,
