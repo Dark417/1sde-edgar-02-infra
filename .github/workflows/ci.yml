@@ -84,10 +84,19 @@ jobs:
       - name: tflint
         run: tflint --recursive
 
-      - name: tfsec
-        uses: aquasecurity/tfsec-action@v1.0.3
+      # Trivy, not tfsec. tfsec is end-of-life — it prints "tfsec is joining the
+      # Trivy family" on every run — and its parser predates Terraform `import`
+      # blocks, so it aborted with "Blocks of type import are not expected here"
+      # rather than scanning anything. Trivy is the maintained successor and
+      # understands current HCL.
+      - name: trivy (IaC misconfiguration scan)
+        uses: aquasecurity/trivy-action@0.28.0
         with:
-          soft_fail: false
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          trivy-config: ""
 
   gates:
     name: forbidden-resource gates
