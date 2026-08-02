@@ -50,7 +50,7 @@ module "storage" {
 
   # Repo 5 reads the Parquet export with credentials. The bucket stays private.
   serving_reader_role_arns = [
-    module.iam.oidc_role_arns["1sde-databricks-edgar-05-serving"],
+    module.iam.oidc_role_arns["1sde-edgar-05-serving"],
   ]
 }
 

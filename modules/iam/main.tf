@@ -85,7 +85,7 @@ data "aws_iam_policy_document" "terraform_trust" {
       type = "AWS"
       identifiers = [
         "arn:${local.partition}:iam::${local.account}:root",
-        aws_iam_role.oidc["1sde-databricks-edgar-02-infra"].arn,
+        aws_iam_role.oidc["1sde-edgar-02-infra"].arn,
       ]
     }
   }
@@ -146,7 +146,7 @@ data "aws_iam_policy_document" "infra_ci_assume" {
 
 resource "aws_iam_role_policy" "infra_ci_assume" {
   name   = "assume-terraform-role"
-  role   = aws_iam_role.oidc["1sde-databricks-edgar-02-infra"].id
+  role   = aws_iam_role.oidc["1sde-edgar-02-infra"].id
   policy = data.aws_iam_policy_document.infra_ci_assume.json
 }
 
@@ -172,7 +172,7 @@ data "aws_iam_policy_document" "ecs_tasks_trust" {
 }
 
 resource "aws_iam_role" "ingest_task" {
-  name               = "1sde-databricks-edgar-03-ingest-task"
+  name               = "1sde-edgar-03-ingest-task"
   description        = "Application role for the ingest container."
   assume_role_policy = data.aws_iam_policy_document.ecs_tasks_trust.json
 }
@@ -234,7 +234,7 @@ resource "aws_iam_role_policy" "ingest_task" {
 # ECS execution role — what the ECS agent uses to start the task
 # ---------------------------------------------------------------------------
 resource "aws_iam_role" "ingest_execution" {
-  name               = "1sde-databricks-edgar-03-ingest-execution"
+  name               = "1sde-edgar-03-ingest-execution"
   description        = "ECS agent role: pulls the image and injects secrets."
   assume_role_policy = data.aws_iam_policy_document.ecs_tasks_trust.json
 }
@@ -415,7 +415,7 @@ data "aws_iam_policy_document" "ingest_ci" {
 
 resource "aws_iam_role_policy" "ingest_ci" {
   name   = "push-ingest-image"
-  role   = aws_iam_role.oidc["1sde-databricks-edgar-03-ingest"].id
+  role   = aws_iam_role.oidc["1sde-edgar-03-ingest"].id
   policy = data.aws_iam_policy_document.ingest_ci.json
 }
 
@@ -438,9 +438,9 @@ data "aws_iam_policy_document" "config_reader" {
 
 resource "aws_iam_role_policy" "config_reader" {
   for_each = toset([
-    "1sde-databricks-edgar-01-contracts",
-    "1sde-databricks-edgar-04-pipelines",
-    "1sde-databricks-edgar-05-serving",
+    "1sde-edgar-01-contracts",
+    "1sde-edgar-04-pipelines",
+    "1sde-edgar-05-serving",
   ])
 
   name   = "read-project-config"

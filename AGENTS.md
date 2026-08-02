@@ -1,9 +1,9 @@
-# Repo 2 / 5 — `1sde-databricks-edgar-02-infra`
+# Repo 2 / 5 — `1sde-edgar-02-infra`
 
 > Copy to repo root as `AGENTS.md`. Sections 0–8 are agent instructions. Section 9 is
 > yours, by hand. Section 10 is what repos 3–5 consume.
 >
-> GitHub: `github.com/Dark417/1sde-databricks-edgar-02-infra`
+> GitHub: `github.com/Dark417/1sde-edgar-02-infra`
 > Build order position: **2 of 5.** Requires repo 1 published.
 
 ---
@@ -99,7 +99,7 @@ Edition gives you one workspace and one metastore, so environment separation is 
 ## 4. Layered structure
 
 ```
-1sde-databricks-edgar-02-infra/
+1sde-edgar-02-infra/
 ├── AGENTS.md
 ├── backend.tf              # S3 backend, bucket name supplied at init
 ├── providers.tf            # aws + databricks (workspace auth)
@@ -151,7 +151,7 @@ passes outputs between them.
    managed policies broader than `AmazonECSTaskExecutionRolePolicy`.
 9. **CloudWatch log retention is set explicitly** (14 days). The default is "never
    expire," which is a slow-motion bill.
-10. **Tag everything**: `project=edgar-lakehouse`, `repo=1sde-databricks-edgar-02-infra`,
+10. **Tag everything**: `project=edgar-lakehouse`, `repo=1sde-edgar-02-infra`,
     `managed_by=terraform`, `env=dev`.
 11. **Idempotency is a test.** A second `apply` must show zero changes. If a resource
     causes perpetual diff, fix it or add `lifecycle { ignore_changes }` with a comment
@@ -174,7 +174,7 @@ repo-5 role, not to the public — the API reads it with credentials.
 
 ### F-2 · `modules/iam`
 - `edgar-lakehouse-tf` execution role (assumed by the human and by CI).
-- `1sde-databricks-edgar-03-ingest-task` role: `s3:PutObject` on raw only,
+- `1sde-edgar-03-ingest-task` role: `s3:PutObject` on raw only,
   `secretsmanager:GetSecretValue` on the two named secrets, `logs:*` on its log group.
 - Five GitHub Actions OIDC roles, one per repo, each scoped to
   `repo:Dark417/<repo-name>:*`. Trust policy uses
@@ -318,9 +318,9 @@ schedule. Do this before the first apply, not after.
 
 ### 9.4 Create the repo and wire the docs
 ```bash
-gh repo create Dark417/1sde-databricks-edgar-02-infra \
+gh repo create Dark417/1sde-edgar-02-infra \
   --private --add-readme --gitignore Terraform --license mit --clone
-cd 1sde-databricks-edgar-02-infra
+cd 1sde-edgar-02-infra
 mkdir -p docs && cp ../design/00-design-doc.md ../design/02-data-contracts.md docs/
 # pip cannot read s3:// URLs — download the wheel first (for the names-match test)
 aws s3 cp "s3://$TF_BUCKET/wheels/" /tmp/wheels/ --recursive

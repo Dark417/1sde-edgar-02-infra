@@ -1,4 +1,4 @@
-# 1sde-databricks-edgar-02-infra
+# 1sde-edgar-02-infra
 
 Terraform for the EDGAR lakehouse: AWS storage, IAM, container build and
 schedule, plus the Databricks **workspace-level** objects (catalog, schemas,

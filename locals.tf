@@ -29,7 +29,7 @@ locals {
 
   tags = {
     project    = "edgar-lakehouse"
-    repo       = "1sde-databricks-edgar-02-infra"
+    repo       = "1sde-edgar-02-infra"
     managed_by = "terraform"
     env        = var.env
   }
@@ -50,7 +50,7 @@ locals {
   # outputs precisely so that IAM can construct the ARNs of resources it grants
   # access to without depending on the modules that create them (see main.tf).
   ecs_cluster    = "edgar-lakehouse-ingest"
-  ecs_family     = "1sde-databricks-edgar-03-ingest"
+  ecs_family     = "1sde-edgar-03-ingest"
   log_group_name = "/ecs/edgar-lakehouse-ingest"
 
   # Every repo that gets a GitHub Actions OIDC role. These must match the GitHub
@@ -58,10 +58,10 @@ locals {
   # condition, and a mismatch fails closed at CI auth time with an unhelpful
   # "not authorized to perform sts:AssumeRoleWithWebIdentity".
   github_repos = [
-    "1sde-databricks-edgar-01-contracts",
-    "1sde-databricks-edgar-02-infra",
-    "1sde-databricks-edgar-03-ingest",
-    "1sde-databricks-edgar-04-pipelines",
-    "1sde-databricks-edgar-05-serving",
+    "1sde-edgar-01-contracts",
+    "1sde-edgar-02-infra",
+    "1sde-edgar-03-ingest",
+    "1sde-edgar-04-pipelines",
+    "1sde-edgar-05-serving",
   ]
 }
