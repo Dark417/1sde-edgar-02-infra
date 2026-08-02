@@ -110,8 +110,21 @@ resource "aws_iam_role" "oidc" {
 # ---------------------------------------------------------------------------
 data "aws_iam_policy_document" "terraform_trust" {
   statement {
-    effect  = "Allow"
-    actions = ["sts:AssumeRole"]
+    effect = "Allow"
+
+    # sts:TagSession alongside sts:AssumeRole. aws-actions/configure-aws-credentials
+    # attaches session tags (repository, workflow, actor, ref) on every assume,
+    # and when role-chaining that means the *source* role must be permitted to
+    # tag. Without it, chaining fails with "not authorized to perform:
+    # sts:TagSession", which reads like a trust problem and is not one.
+    #
+    # Permitting it rather than disabling tagging is the better trade: those tags
+    # land in CloudTrail, so an audit of who applied what shows the workflow and
+    # commit rather than an anonymous assumed-role session.
+    actions = [
+      "sts:AssumeRole",
+      "sts:TagSession",
+    ]
 
     principals {
       type = "AWS"
