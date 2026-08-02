@@ -18,7 +18,3 @@ output "wheel_volume_id" {
   value       = databricks_volume.wheels.id
 }
 
-output "job_id" {
-  description = "Daily job id. Repo 4 updates its task wheel version."
-  value       = databricks_job.daily.id
-}

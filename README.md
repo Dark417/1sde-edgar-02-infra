@@ -9,8 +9,18 @@ This is the only repo that runs `terraform apply`.
 ## What it owns, and what it deliberately does not
 
 Terraform owns the *containers*: the catalog, the four schemas, the volumes, the
-job definition, the buckets, the roles. It does not own **tables** — those
-belong to Liquibase in repo 1. There are no `databricks_sql_table` resources
+buckets, the roles. It does not own **tables** — those belong to Liquibase in
+repo 1 — and as of 2026-08-02 it no longer owns the **Databricks job** either.
+
+That last one is worth reading before you reach for it again. An ECS task
+definition references its image by URI, so this repo can declare the container
+without knowing what runs inside. A Databricks job offers no equivalent seam:
+its tasks name the package, entry point, parameters and dependency edges, which
+*is* repo 4's interface. Declaring it here meant restating another repo's
+internals, and every field was wrong — wrong wheel filename, wrong package name,
+six invented entry points against one real dispatcher, six tasks against four.
+The job was live and would have failed on its first run. Repo 4's Asset Bundle
+owns it now; this repo still provides the `wheels` volume it publishes into. There are no `databricks_sql_table` resources
 here and CI fails the build if one appears. Two tools owning the same object is
 how you get a `terraform destroy` that silently drops a table the other tool
 still thinks it manages.

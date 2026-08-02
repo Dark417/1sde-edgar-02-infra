@@ -42,9 +42,10 @@ locals {
     # F-7 list. Flagged rather than silently dropped — see README.
     "/edgar-lakehouse/ecs/task_family" = var.ecs_family
 
-    # Consumed by: repo 4 (updates the job's task wheel version).
-    # NOTE: same §10-vs-F-7 discrepancy as above.
-    "/edgar-lakehouse/dbx/job_id" = var.databricks_job_id
+    # NOTE: /edgar-lakehouse/dbx/job_id was removed 2026-08-02 along with the
+    # job resource itself. Repo 4's bundle now creates and updates its own job,
+    # so it has no need to look up an id this repo would have invented. Repo 4's
+    # own ADR-006 had already flagged the parameter as having no consumer.
   }
 }
 

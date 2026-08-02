@@ -28,35 +28,3 @@ variable "workspace_principal" {
   default     = ""
 }
 
-variable "wheel_dir" {
-  description = "Volume directory holding the repo-4 wheel."
-  type        = string
-}
-
-variable "wheel_version" {
-  description = "Exact repo-4 wheel version each task installs. Never \"latest\"."
-  type        = string
-}
-
-variable "job_name" {
-  description = "Name of the daily medallion job."
-  type        = string
-}
-
-variable "job_schedule_enabled" {
-  description = <<-EOT
-    Mirrors var.schedule_enabled. The job is created PAUSED for the same reason
-    the EventBridge schedule is created DISABLED.
-  EOT
-  type        = bool
-  default     = false
-}
-
-variable "job_schedule_expression" {
-  description = <<-EOT
-    07:00 UTC — one hour after the 06:00 ingest run, so the landing zone is
-    settled before Auto Loader reads it. Quartz syntax (seconds first).
-  EOT
-  type        = string
-  default     = "0 0 7 * * ?"
-}

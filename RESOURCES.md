@@ -1,23 +1,23 @@
-# Resources
+﻿# Resources
 
 Every resource this repo manages, what it is for, and who consumes it.
 Generated from live `terraform state list`, not from the configuration — so it
 reflects what actually exists.
 
-**71 managed resources across 7 modules.** The root module holds none: it has 5
+**69 managed resources across 7 modules.** The root module holds none: it has 5
 data sources and 7 `module` blocks, and a test fails the build if a `resource`
 appears there.
 
 ---
 
-## Why 71 is not 71 separate decisions
+## Why 69 is not 69 separate decisions
 
 Three multipliers account for most of the count:
 
 | Source of inflation | Count |
 |---|---|
 | S3's decomposed API — versioning, encryption, public-access block, lifecycle and policy are each their own resource, × 2 buckets | 12 |
-| SSM parameters (the published interface) | 15 |
+| SSM parameters (the published interface) | 14 |
 | `for_each` over 5 repos — OIDC roles, wheel-read policies, role-ARN parameters | 15 |
 | **Everything else — the actual infrastructure** | **29** |
 
@@ -29,7 +29,7 @@ Three multipliers account for most of the count:
 graph TD
   subgraph w1["wave 1 — no dependencies"]
     REG[registry<br/>ECR repo + lifecycle]
-    DBX[databricks<br/>catalog, schemas,<br/>volumes, grants, job]
+    DBX[databricks<br/>catalog, schemas,<br/>volumes, grants]
   end
   subgraph w2["wave 2"]
     IAM[iam<br/>OIDC provider, 9 roles,<br/>11 policies]
@@ -42,7 +42,7 @@ graph TD
     SCH[schedule<br/>EventBridge]
   end
   subgraph w5["wave 5"]
-    PAR[params<br/>15 SSM parameters]
+    PAR[params<br/>14 SSM parameters]
   end
 
   REG -->|repository ARN<br/>to scope image pulls| IAM
@@ -55,7 +55,6 @@ graph TD
   REG --> PAR
   IAM --> PAR
   CMP --> PAR
-  DBX -->|job id| PAR
 ```
 
 `databricks` is entirely independent of the AWS chain and completes in parallel
@@ -115,7 +114,7 @@ are reached by one of these identities.
 | `aws_iam_role_policy.wheels_read[×5]` | Every repo installs the contracts wheel from `s3://<state-bucket>/wheels/` |
 | `aws_iam_role_policy.wheels_write` | Repo 1 publishes it. No `DeleteObject` — a published version is immutable |
 
-## params — 15 resources
+## params — 14 resources
 
 The published interface. Repos 3–5 read config here at runtime rather than
 hardcoding ARNs; SSM rather than `terraform_remote_state` because remote state
@@ -126,7 +125,7 @@ would grant every consumer read access to every output.
 | `/edgar-lakehouse/dbx/host` | repos 1, 4, 5 |
 | `/edgar-lakehouse/dbx/volume_path` | repos 3, 4 |
 | `/edgar-lakehouse/dbx/warehouse_id` | repos 1, 5 |
-| `/edgar-lakehouse/dbx/job_id` | repo 4 |
+| ~~`/edgar-lakehouse/dbx/job_id`~~ | **Removed** with the job. Repo 4 creates its own job and never needed an id from here. |
 | `/edgar-lakehouse/s3/raw_bucket` | repos 3, 4 |
 | `/edgar-lakehouse/s3/serving_bucket` | repos 4, 5 |
 | `/edgar-lakehouse/ecr/ingest_repo` | repo 3 CI |
@@ -140,7 +139,7 @@ would grant every consumer read access to every output.
 > for the operator running `get-parameters-by-path`. Kept because §10 names them
 > and Standard parameters are free, but they would be the first thing to cut.
 
-## databricks — 11 resources
+## databricks — 10 resources
 
 Terraform owns the **containers**. Tables belong to Liquibase in repo 1; there
 are no table resources here and CI fails the build if one appears.
@@ -152,7 +151,7 @@ are no table resources here and CI fails the build if one appears.
 | `databricks_volume.landing_edgar` | Landing transport. Imported |
 | `databricks_volume.wheels` | Repo 4's private wheel needs a readable path |
 | `databricks_grants[×3]` | Catalog and both volumes. `count`-gated: UC needs an **account-level** principal, and workspace groups `admins`/`users` do not resolve |
-| `databricks_job.daily` | The 6-task medallion DAG. Created **PAUSED** |
+| ~~`databricks_job.daily`~~ | **Removed 2026-08-02** — the job definition belongs to repo 4's Asset Bundle. A Databricks job's tasks name the package, entry point and parameters, so declaring it here restated repo 4's internals and got every field wrong. |
 
 ## compute — 5 resources
 

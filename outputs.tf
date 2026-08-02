@@ -44,11 +44,6 @@ output "volume_path" {
   value       = local.volume_landing
 }
 
-output "databricks_job_id" {
-  description = "Daily medallion job id; repo 4 updates its task wheel version."
-  value       = module.databricks.job_id
-}
-
 output "schedule_state" {
   description = "ENABLED/DISABLED. Must read DISABLED until repo 4 has run by hand."
   value       = module.schedule.state

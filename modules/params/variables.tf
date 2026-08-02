@@ -39,6 +39,3 @@ variable "ecs_family" {
   type = string
 }
 
-variable "databricks_job_id" {
-  type = string
-}

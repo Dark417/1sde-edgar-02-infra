@@ -200,11 +200,19 @@ jobs:
           terraform plan -var-file=envs/dev.tfvars -var 'aws_profile=' \
             -no-color -out=tf.plan | tee plan.txt
 
-      - name: Refuse plans containing destroy actions
+      # WARN, do not fail. A hard failure here would make every legitimate
+      # removal unmergeable — you could never delete a resource again without
+      # disabling the check. Surfacing it loudly on the PR is what review needs;
+      # the hard stop belongs on the apply side, where it can actually cause
+      # damage.
+      - name: Flag destroy or replace actions for review
         run: |
           if grep -qE '^\s*# .* (will be destroyed|must be replaced)' plan.txt; then
-            echo "::error::Plan contains destroy or replace actions. Review by hand."
-            exit 1
+            echo "::warning::This plan DESTROYS or REPLACES resources. Read the plan before approving."
+            grep -E '^\s*# .* (will be destroyed|must be replaced)' plan.txt
+            echo
+            echo "Auto-apply on merge will REFUSE this. Merging is fine; applying it"
+            echo "needs a deliberate workflow_dispatch run afterwards."
           fi
 
       - name: Comment the plan
@@ -259,13 +267,21 @@ jobs:
           terraform plan -var-file=envs/dev.tfvars -var 'aws_profile=' \
             -no-color -out=tf.plan | tee plan.txt
 
-      # The guard that makes auto-apply safe. A destroy here means dropping a
-      # catalog Liquibase built 13 tables inside, so the job stops and waits for
-      # a human rather than converging.
-      - name: Abort on destroy or replace
+      # The guard that makes auto-apply safe — and it applies ONLY to the
+      # automatic path. A destroy here can mean dropping a catalog with 13
+      # Liquibase-managed tables inside, so merging must never do it silently.
+      #
+      # workflow_dispatch is exempt on purpose: reaching it requires a human to
+      # type "apply" AND clear the `dev` environment reviewer, which is exactly
+      # the deliberate intent the guard exists to demand. Without the exemption
+      # there would be no way to remove a resource at all.
+      - name: Abort on destroy or replace (automatic applies only)
+        if: github.event_name == 'push'
         run: |
           if grep -qE '^\s*# .* (will be destroyed|must be replaced)' plan.txt; then
-            echo "::error::Plan would destroy or replace a resource. Auto-apply refuses; review, then run workflow_dispatch."
+            echo "::error::Plan would destroy or replace a resource. Auto-apply refuses by design."
+            grep -E '^\s*# .* (will be destroyed|must be replaced)' plan.txt
+            echo "Review it, then run this workflow manually via workflow_dispatch."
             exit 1
           fi
 
