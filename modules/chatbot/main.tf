@@ -34,26 +34,15 @@ resource "aws_ssm_parameter" "chat" {
   tags = var.tags
 }
 
-# The optional Anthropic direct-API key. Terraform creates the CONTAINER with a
-# placeholder value only; the real value is set by hand (aws secretsmanager
-# put-secret-value) so plaintext never enters state — same rule 5 discipline as
-# the Databricks PAT. Bedrock needs no key at all; this exists for the direct
-# Anthropic API fallback and stays a placeholder until someone needs that path.
+# The optional Anthropic direct-API key. Terraform creates the CONTAINER only —
+# no aws_secretsmanager_secret_version resource exists in this repo, ever; the
+# policy gate (test_no_secret_version_resources) fails the build on one, because
+# even a placeholder value lands in state. The placeholder AND the real value
+# are both set by hand: see repo 6 docs/SETUP-CREDENTIALS.md. Bedrock needs no
+# key at all; this exists only for the direct Anthropic API fallback.
 resource "aws_secretsmanager_secret" "anthropic_api_key" {
   name        = "/edgar-lakehouse/chat/anthropic_api_key"
   description = "Optional Anthropic API key for repo 6 direct-API fallback. Placeholder until set by hand; see repo 6 docs/SETUP-CREDENTIALS.md."
 
   tags = var.tags
-}
-
-resource "aws_secretsmanager_secret_version" "anthropic_api_key_placeholder" {
-  secret_id     = aws_secretsmanager_secret.anthropic_api_key.id
-  secret_string = "PLACEHOLDER-set-me"
-
-  # The human overwrites this by hand; Terraform must never revert it and the
-  # real value must never enter state. Ignoring changes is what makes the
-  # placeholder pattern compatible with rule 5.
-  lifecycle {
-    ignore_changes = [secret_string]
-  }
 }
