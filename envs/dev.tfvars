@@ -39,7 +39,7 @@ landing_mode = "volume"
 # Pinned repo-1 wheel. Must match the version actually published to
 # s3://<state-bucket>/wheels/ — repos 3-5 read this from SSM and install exactly
 # it, so a stale pin here is an install failure everywhere downstream.
-contracts_version = "1.2.0"
+contracts_version = "1.4.0"
 
 # Rule 4. Stays false until repo 4 has run successfully by hand (§9.9).
 schedule_enabled = false
