@@ -231,9 +231,23 @@ jobs:
   apply:
     name: apply
     # Automatic on merge to main; manual dispatch still requires typing "apply".
+    #
+    # `vars.AWS_BOOTSTRAPPED` is the third condition, and it is why this job has been
+    # red on every merge. The AWS account is not bootstrapped (AGENTS.md 9.1-9.3), so
+    # TF_STATE_BUCKET and the role ARNs are unset, `terraform init` fails, no tf.plan is
+    # written, and the apply step dies on `stat tf.plan: no such file`. That reads like a
+    # workflow bug and is not one -- there is simply nothing to apply into yet.
+    #
+    # A repository *variable* rather than a secret check: the `secrets` context is not
+    # available in a job-level `if:`, and gating each step individually would leave the
+    # job green while doing nothing, which is worse than skipping honestly.
+    #
+    # Set `AWS_BOOTSTRAPPED=true` once 9.1-9.3 are done and this applies on the next
+    # merge to main.
     if: >-
-      github.event_name == 'push' ||
-      (github.event_name == 'workflow_dispatch' && inputs.confirm == 'apply')
+      vars.AWS_BOOTSTRAPPED == 'true' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && inputs.confirm == 'apply'))
     runs-on: ubuntu-latest
     needs: [static, gates, tests]
     environment: dev
