@@ -63,5 +63,6 @@ locals {
     "1sde-edgar-03-ingest",
     "1sde-edgar-04-pipelines",
     "1sde-edgar-05-serving",
+    "1sde-edgar-06-chatbot",
   ]
 }

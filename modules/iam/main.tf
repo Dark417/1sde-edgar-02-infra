@@ -539,6 +539,10 @@ resource "aws_iam_role_policy" "config_reader" {
     "1sde-edgar-01-contracts",
     "1sde-edgar-04-pipelines",
     "1sde-edgar-05-serving",
+    # Repo 6 reads /edgar-lakehouse/chat/* on every start: the kill switch, the
+    # model pin, and the daily token ceiling. Without this its CI cannot even
+    # resolve which model to call.
+    "1sde-edgar-06-chatbot",
   ])
 
   name   = "read-project-config"
@@ -604,4 +608,66 @@ resource "aws_iam_role_policy" "wheels_write" {
   name   = "publish-contracts-wheel"
   role   = aws_iam_role.oidc["1sde-edgar-01-contracts"].id
   policy = data.aws_iam_policy_document.wheels_write.json
+}
+
+# ---------------------------------------------------------------------------
+# Bedrock inference for the chatbot (repo 6)
+#
+# Bedrock has no API key: the caller's AWS identity IS the credential, so this
+# policy is the whole of "the chatbot can talk to a model". Two things are
+# scoped deliberately:
+#
+#   * Actions are InvokeModel and InvokeModelWithResponseStream only. Nothing
+#     here may create, tune, delete or share a model.
+#   * Resources are Anthropic and Amazon foundation models plus the matching
+#     cross-region inference profiles, in this partition, not "*". The
+#     candidate list in repo 6 config.py is Claude first with Nova as the
+#     fallback, and the profile ARNs are required because every id the app
+#     actually calls is an inference profile (us.anthropic..., us.amazon...),
+#     which resolves to the underlying model in another region.
+#
+# Anthropic models additionally need the one-time account use-case form; that
+# is an account fact, not IAM, and it was submitted for this account on
+# 2026-08-02. IAM alone cannot grant it and cannot revoke it.
+# ---------------------------------------------------------------------------
+data "aws_iam_policy_document" "bedrock_invoke" {
+  statement {
+    sid    = "InvokeFoundationModels"
+    effect = "Allow"
+
+    actions = [
+      "bedrock:InvokeModel",
+      "bedrock:InvokeModelWithResponseStream",
+    ]
+
+    resources = [
+      "arn:${data.aws_partition.current.partition}:bedrock:*::foundation-model/anthropic.*",
+      "arn:${data.aws_partition.current.partition}:bedrock:*::foundation-model/amazon.nova-*",
+      "arn:${data.aws_partition.current.partition}:bedrock:*:${data.aws_caller_identity.current.account_id}:inference-profile/us.anthropic.*",
+      "arn:${data.aws_partition.current.partition}:bedrock:*:${data.aws_caller_identity.current.account_id}:inference-profile/us.amazon.nova-*",
+    ]
+  }
+
+  # Listing is how the app discovers which models this account can actually
+  # invoke (config.pick_model probes the candidate list). It is read-only and
+  # carries no model access of its own.
+  statement {
+    sid     = "DiscoverModels"
+    effect  = "Allow"
+    actions = ["bedrock:ListFoundationModels", "bedrock:ListInferenceProfiles"]
+
+    # allow-wildcard-resource: both are account-level list calls that take no
+    # resource argument — AWS rejects a resource-scoped ARN on them, so "*" is
+    # the only value that works. They return the catalogue, not model output;
+    # invocation is granted separately above and is ARN-scoped.
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "bedrock_invoke" {
+  for_each = toset(["1sde-edgar-06-chatbot"])
+
+  name   = "invoke-bedrock-models"
+  role   = aws_iam_role.oidc[each.value].id
+  policy = data.aws_iam_policy_document.bedrock_invoke.json
 }

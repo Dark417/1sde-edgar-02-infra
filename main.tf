@@ -134,8 +134,21 @@ module "params" {
 module "chatbot" {
   source = "./modules/chatbot"
 
-  # Defaults are the correct initial state: enabled, probe-for-model, 200k/day.
-  # Model ids get pinned here (or by hand in SSM) once the Bedrock Anthropic
-  # use-case form is approved — see repo 6 docs/SETUP-CREDENTIALS.md.
+  # Pinned rather than probed, because the Bedrock Anthropic use-case form was
+  # approved for this account on 2026-08-02 and Claude is confirmed invocable.
+  # Probing costs a round trip on every cold start and makes which model
+  # answered a runtime accident; pinning makes it a reviewable line of config.
+  #
+  # Sonnet for the agent loop: its job is choosing tools and writing careful
+  # prose around numbers it must not alter, and it is better at multi-step
+  # plans and at honouring "never state a figure without unit and period".
+  # Haiku for the cheap path (the topic gate), where the decision is a
+  # one-token classification and latency matters more than judgement.
+  #
+  # Repo 6 still falls back to probing if these are unset or unreachable, so a
+  # fresh account without the form keeps working on Nova.
+  chat_model_main  = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+  chat_model_cheap = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+
   tags = local.tags
 }
