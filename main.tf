@@ -130,3 +130,12 @@ module "params" {
   oidc_role_arns    = module.iam.oidc_role_arns
   ecs_family        = module.compute.family
 }
+
+module "chatbot" {
+  source = "./modules/chatbot"
+
+  # Defaults are the correct initial state: enabled, probe-for-model, 200k/day.
+  # Model ids get pinned here (or by hand in SSM) once the Bedrock Anthropic
+  # use-case form is approved — see repo 6 docs/SETUP-CREDENTIALS.md.
+  tags = local.tags
+}
