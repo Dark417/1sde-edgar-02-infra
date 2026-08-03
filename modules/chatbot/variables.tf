@@ -5,15 +5,15 @@ variable "chat_enabled" {
 }
 
 variable "chat_model_main" {
-  description = "Bedrock model id for the main agent. Empty = repo 6 probes its candidate list at startup."
+  description = "Bedrock model id for the main agent. The literal string 'probe' = repo 6 probes its candidate list at startup (SSM forbids empty values)."
   type        = string
-  default     = ""
+  default     = "probe"
 }
 
 variable "chat_model_cheap" {
-  description = "Bedrock model id for the topic gate. Empty = same as main."
+  description = "Bedrock model id for the topic gate. The literal string 'probe' = same as main (SSM forbids empty values)."
   type        = string
-  default     = ""
+  default     = "probe"
 }
 
 variable "chat_token_budget_day" {
