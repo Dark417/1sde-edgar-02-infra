@@ -119,11 +119,23 @@ variable "ingest_image_tag" {
 
 variable "ingest_image_digest" {
   description = <<-EOT
-    Immutable image digest ("sha256:..."), supplied by repo 3's CI at deploy
-    time. When empty the task definition falls back to the tag, which is only
-    correct during bootstrap: on the very first apply the ECR repository is
-    empty, and an `aws_ecr_image` data source would hard-fail the plan rather
-    than degrade. Repo 3 passes -var ingest_image_digest=... on every deploy.
+    Immutable image digest ("sha256:..."). When empty the task definition uses
+    the `:latest` tag, which re-resolves on every task launch.
+
+    LEAVE THIS EMPTY IN CI. It used to say "repo 3 passes -var
+    ingest_image_digest=... on every deploy", which was never true: repo 3's
+    `image` job calls `aws ecs register-task-definition` directly, pinning the
+    digest on a revision of its own. The scheduler targets the family without a
+    revision, so it picks up whichever revision is newest -- repo 3's pinned one
+    after a deploy, Terraform's tag-based one after an apply. Both resolve to a
+    working image, so there is nothing to hand off.
+
+    Setting this pins ONE digest forever. Terraform does not check that the
+    digest still exists in ECR, so a stale value plans clean and then fails
+    every task with CannotPullContainerError. That is not hypothetical: a stale
+    digest left in envs/dev.local.tfvars produced exactly that, and the plan it
+    generated looked perfectly ordinary. Use it only to deliberately roll back
+    to a known-good image, and delete it again afterwards.
   EOT
   type        = string
   default     = ""
