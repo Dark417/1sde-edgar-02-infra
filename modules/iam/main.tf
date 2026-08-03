@@ -627,7 +627,7 @@ resource "aws_iam_role_policy" "wheels_write" {
 #     which resolves to the underlying model in another region.
 #
 # Anthropic models additionally need the one-time account use-case form; that
-# is an account fact, not IAM, and it was submitted for 806168459926 on
+# is an account fact, not IAM, and it was submitted for this account on
 # 2026-08-02. IAM alone cannot grant it and cannot revoke it.
 # ---------------------------------------------------------------------------
 data "aws_iam_policy_document" "bedrock_invoke" {
