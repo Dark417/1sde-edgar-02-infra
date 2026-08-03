@@ -652,9 +652,14 @@ data "aws_iam_policy_document" "bedrock_invoke" {
   # invoke (config.pick_model probes the candidate list). It is read-only and
   # carries no model access of its own.
   statement {
-    sid       = "DiscoverModels"
-    effect    = "Allow"
-    actions   = ["bedrock:ListFoundationModels", "bedrock:ListInferenceProfiles"]
+    sid     = "DiscoverModels"
+    effect  = "Allow"
+    actions = ["bedrock:ListFoundationModels", "bedrock:ListInferenceProfiles"]
+
+    # allow-wildcard-resource: both are account-level list calls that take no
+    # resource argument — AWS rejects a resource-scoped ARN on them, so "*" is
+    # the only value that works. They return the catalogue, not model output;
+    # invocation is granted separately above and is ARN-scoped.
     resources = ["*"]
   }
 }
