@@ -110,9 +110,18 @@ git clone --depth 1 "${serving_repo_url}" "$SERVING_DIR"
 
 # The contracts wheel is not on PyPI, so it comes from repo 1's release the same
 # way CI gets it. Without this the install fails on an unresolvable pin.
+#
+# It MUST keep its published filename. pip reads the distribution name and
+# version straight out of the wheel's PEP 427 filename when indexing a
+# --find-links directory; a file called `contracts.whl` parses as neither, so
+# pip skips it silently and then reports "No matching distribution found for
+# edgar-lakehouse-contracts==1.4.1 (from versions: none)" -- which reads like a
+# missing release rather than a file it declined to look inside. Observed on
+# this host: the download succeeded and the install failed anyway.
 CONTRACTS_PIN=$(grep -oE 'edgar-lakehouse-contracts==[0-9.]+' "$SERVING_DIR/pyproject.toml" | cut -d= -f3)
+CONTRACTS_WHL="edgar_lakehouse_contracts-$CONTRACTS_PIN-py3-none-any.whl"
 mkdir -p "$SERVING_DIR/wheels"
-curl -fsSL -o "$SERVING_DIR/wheels/contracts.whl"   "https://github.com/${contracts_repo}/releases/download/v$CONTRACTS_PIN/edgar_lakehouse_contracts-$CONTRACTS_PIN-py3-none-any.whl"
+curl -fsSL -o "$SERVING_DIR/wheels/$CONTRACTS_WHL" "https://github.com/${contracts_repo}/releases/download/v$CONTRACTS_PIN/$CONTRACTS_WHL"
 
 python3.11 -m venv "$SERVING_DIR/.venv"
 "$SERVING_DIR/.venv/bin/pip" install --no-cache-dir -q --upgrade pip
