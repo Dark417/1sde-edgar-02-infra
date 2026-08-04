@@ -119,6 +119,21 @@ resource "aws_iam_role_policy" "chatbot_host" {
   policy = data.aws_iam_policy_document.chatbot_host.json
 }
 
+# Session Manager. Added after the host failed at startup with a message the UI
+# truncated, and there was no way to read the traceback: no SSH rule, no session
+# access, so the only diagnostic move left was to replace the instance and hope
+# the next boot said more. "Rebuild rather than log in" is a fine rule for
+# changing the host; it is not a substitute for being able to read its logs.
+#
+# This opens no port. The agent dials out to the SSM endpoints over the egress
+# rule that already exists, so the inbound posture is unchanged -- access is
+# gated by IAM on who may call StartSession, not by a listening service.
+resource "aws_iam_role_policy_attachment" "chatbot_ssm" {
+  count      = var.deploy_chatbot ? 1 : 0
+  role       = aws_iam_role.chatbot[0].name
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
 resource "aws_iam_instance_profile" "chatbot" {
   count = var.deploy_chatbot ? 1 : 0
   name  = "edgar-chatbot-host"
@@ -135,14 +150,56 @@ resource "aws_security_group" "chatbot" {
   tags        = var.tags
 }
 
-resource "aws_vpc_security_group_ingress_rule" "chatbot_ui" {
-  for_each = var.deploy_chatbot ? toset(var.chatbot_allowed_cidrs) : toset([])
+# Repo 5's API and UI. Same allow-list as the chatbot: this is a demo host, and
+# a read-only service over public SEC data still has no reason to face the whole
+# internet.
+#
+# Gated on chatbot_domain exactly like the 8501 rule, and for the same reason:
+# Caddy now routes `/` to repo 5 and `/chat` to the chatbot, so with a domain
+# set repo 5 is served over TLS on 443 and 8055 is loopback-only. Leaving this
+# rule open would expose a plaintext second door to the same content.
+#
+# It was briefly ungated, correctly, during the window when Caddy proxied only
+# 8501 -- gating it then would have bound repo 5 to loopback behind a proxy with
+# no route to it. The rule and the Caddyfile have to move together.
+resource "aws_vpc_security_group_ingress_rule" "serving_ui" {
+  for_each = var.deploy_chatbot && var.chatbot_domain == "" ? toset(var.chatbot_allowed_cidrs) : toset([])
 
   security_group_id = aws_security_group.chatbot[0].id
-  description       = "Streamlit UI"
+  description       = "EDGAR serving API and UI"
+  cidr_ipv4         = each.value
+  from_port         = 8055
+  to_port           = 8055
+  ip_protocol       = "tcp"
+}
+
+# Only in the no-domain case. Once a domain is set Streamlit binds 127.0.0.1 and
+# 8501 answers nobody from outside, so keeping the rule would leave a port open
+# to the whole internet that grants no access -- an inbound rule that reads as
+# reachable but is not is worse than no rule, because the next reader trusts it.
+# The two paths are mutually exclusive by construction.
+resource "aws_vpc_security_group_ingress_rule" "chatbot_ui" {
+  for_each = var.deploy_chatbot && var.chatbot_domain == "" ? toset(var.chatbot_allowed_cidrs) : toset([])
+
+  security_group_id = aws_security_group.chatbot[0].id
+  description       = "Streamlit UI (plain HTTP, no domain configured)"
   cidr_ipv4         = each.value
   from_port         = 8501
   to_port           = 8501
+  ip_protocol       = "tcp"
+}
+
+# 80 and 443 exist only when a domain is configured. 80 is not decorative:
+# Caddy needs it reachable for the ACME HTTP-01 challenge, and afterwards it
+# serves the redirect to HTTPS.
+resource "aws_vpc_security_group_ingress_rule" "chatbot_https" {
+  for_each = var.deploy_chatbot && var.chatbot_domain != "" ? toset(["80", "443"]) : toset([])
+
+  security_group_id = aws_security_group.chatbot[0].id
+  description       = "HTTPS (and ACME challenge on 80)"
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = tonumber(each.value)
+  to_port           = tonumber(each.value)
   ip_protocol       = "tcp"
 }
 
@@ -185,6 +242,27 @@ resource "aws_instance" "chatbot" {
     model_main     = var.chat_model_main
     model_cheap    = var.chat_model_cheap
     token_budget   = var.chat_token_budget_day
+    domain         = var.chatbot_domain
+    # Behind Caddy, both apps bind loopback so neither port is separately
+    # reachable; without a domain each must bind all interfaces to be usable.
+    streamlit_bind = var.chatbot_domain != "" ? "127.0.0.1" : "0.0.0.0"
+
+    # Where the assistant is mounted. Must match the Caddy `handle /chat*`
+    # route: Streamlit generates its own asset and websocket URLs from this, so
+    # a mismatch between the two produces a page that loads and never connects.
+    # Empty when there is no domain, i.e. Streamlit owns the whole port.
+    streamlit_base_path = var.chatbot_domain != "" ? "chat" : ""
+
+    serving_repo_url = var.serving_repo_url
+    serving_bucket   = var.serving_bucket
+    contracts_repo   = var.contracts_repo
+    serving_bind     = var.chatbot_domain != "" ? "127.0.0.1" : "0.0.0.0"
+
+    # The two cross-links, both empty unless a domain joins the services under
+    # one origin. Without one they run on separate ports with no shared path,
+    # and each app renders no link rather than a broken one.
+    chat_url = var.chatbot_domain != "" ? "/chat/" : ""
+    site_url = var.chatbot_domain != "" ? "https://${var.chatbot_domain}/" : ""
   })
 
   tags = merge(var.tags, { Name = "edgar-chatbot" })

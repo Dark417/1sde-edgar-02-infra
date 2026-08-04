@@ -1,5 +1,19 @@
 # 1sde-edgar-02-infra
 
+> **Part of the [EDGAR lakehouse](https://github.com/Dark417/1sde-edgar-06-chatbot#readme)
+> project.** That README is the front door: the dataflow, the Databricks layers, how the
+> chatbot answers, how the six repositories fit together, and what it costs — one diagram
+> each.
+>
+> **Live:** [the site](https://edgar.xiaoxiaolei.com) ·
+> [SEC EDGAR](https://www.sec.gov/edgar), the source of every figure.
+
+
+Repo 2 of 6. Terraform for everything the others run on: the buckets, the container
+registry, the Fargate cluster, the schedules, the IAM roles and the host that serves the
+site and the chatbot. Nothing is created by hand, and an auto-apply refuses any plan that
+would destroy or replace a resource.
+
 Terraform for the EDGAR lakehouse: AWS storage, IAM, container build and
 schedule, plus the Databricks **workspace-level** objects (catalog, schemas,
 volume, grants, job). Repo 2 of 5.

@@ -40,6 +40,9 @@ BEDROCK_MODEL_ID=${model_main}
 BEDROCK_MODEL_CHEAP=${model_cheap}
 TOKEN_BUDGET_DAY=${token_budget}
 PYTHONPATH=$APP_DIR/src
+# The way back out of the assistant, to repo 5's site. Only set when the two
+# share a hostname; empty renders no link rather than a broken one.
+LINK_SITE=${site_url}
 ENVEOF
 chmod 0644 /etc/finchat.env
 
@@ -58,7 +61,8 @@ WorkingDirectory=/opt/finchat
 EnvironmentFile=/etc/finchat.env
 ExecStart=/opt/finchat/.venv/bin/streamlit run app.py \
   --server.port 8501 \
-  --server.address 0.0.0.0 \
+  --server.address ${streamlit_bind} \
+  --server.baseUrlPath "${streamlit_base_path}" \
   --server.headless true \
   --browser.gatherUsageStats false
 Restart=always
@@ -78,3 +82,161 @@ UNITEOF
 
 systemctl daemon-reload
 systemctl enable --now finchat.service
+
+# --- repo 5: the serving API and UI ----------------------------------------
+#
+# Co-hosted on this box rather than given its own. It is a read-only FastAPI
+# process over the same S3 export the chatbot reads, and this instance already
+# holds exactly the permissions it needs (s3:GetObject on the serving prefix,
+# ssm:GetParameter) -- so a second host would have cost ~$5-7/month to duplicate
+# an IAM role and sit idle.
+#
+# The trade-off is honest: repo 5's uptime is now coupled to this instance. At
+# demo scale that is acceptable. If the two ever need to fail independently,
+# repo 5 is already containerised -- move it to its own runtime and delete this
+# block, nothing else changes.
+#
+# It is a FUNCTION, invoked at the very end after Caddy is up, and its failure is
+# swallowed on purpose. This script runs under `set -e`, and everything below
+# reaches the network: a git clone, a GitHub release download, a pip install. If
+# any of that fails inline, the script aborts before the HTTPS section and the
+# instance comes up with no certificate -- so a bad wheel pin in repo 5 would
+# take the published chatbot URL offline. Repo 5 is the addition here; the
+# chatbot is the thing already being shown. The optional part must not be able
+# to break the load-bearing one.
+install_serving() {
+SERVING_DIR=/opt/edgar-serving
+SERVING_USER=edgarserving
+
+id -u "$SERVING_USER" >/dev/null 2>&1 || useradd --system --home-dir "$SERVING_DIR" --shell /sbin/nologin "$SERVING_USER"
+rm -rf "$SERVING_DIR"
+git clone --depth 1 "${serving_repo_url}" "$SERVING_DIR"
+
+# The contracts wheel is not on PyPI, so it comes from repo 1's release the same
+# way CI gets it. Without this the install fails on an unresolvable pin.
+#
+# It MUST keep its published filename. pip reads the distribution name and
+# version straight out of the wheel's PEP 427 filename when indexing a
+# --find-links directory; a file called `contracts.whl` parses as neither, so
+# pip skips it silently and then reports "No matching distribution found for
+# edgar-lakehouse-contracts==1.4.1 (from versions: none)" -- which reads like a
+# missing release rather than a file it declined to look inside. Observed on
+# this host: the download succeeded and the install failed anyway.
+CONTRACTS_PIN=$(grep -oE 'edgar-lakehouse-contracts==[0-9.]+' "$SERVING_DIR/pyproject.toml" | cut -d= -f3)
+CONTRACTS_WHL="edgar_lakehouse_contracts-$CONTRACTS_PIN-py3-none-any.whl"
+mkdir -p "$SERVING_DIR/wheels"
+curl -fsSL -o "$SERVING_DIR/wheels/$CONTRACTS_WHL" "https://github.com/${contracts_repo}/releases/download/v$CONTRACTS_PIN/$CONTRACTS_WHL"
+
+python3.11 -m venv "$SERVING_DIR/.venv"
+"$SERVING_DIR/.venv/bin/pip" install --no-cache-dir -q --upgrade pip
+"$SERVING_DIR/.venv/bin/pip" install --no-cache-dir -q --find-links "$SERVING_DIR/wheels" "$SERVING_DIR"
+chown -R "$SERVING_USER":"$SERVING_USER" "$SERVING_DIR"
+
+cat >/etc/edgar-serving.env <<ENVEOF
+AWS_REGION=${region}
+SERVING_BUCKET=${serving_bucket}
+SERVING_REFRESH_SECONDS=300
+# Renders the "Ask" nav item pointing at the assistant. Empty when there is no
+# domain, because then the two are on separate ports and no shared path exists.
+CHAT_URL=${chat_url}
+ENVEOF
+chmod 0644 /etc/edgar-serving.env
+
+cat >/etc/systemd/system/edgar-serving.service <<'UNITEOF'
+[Unit]
+Description=EDGAR lakehouse serving API and UI (FastAPI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=edgarserving
+WorkingDirectory=/opt/edgar-serving
+EnvironmentFile=/etc/edgar-serving.env
+ExecStart=/opt/edgar-serving/.venv/bin/uvicorn serving.app:app   --host ${serving_bind}   --port 8055
+Restart=always
+RestartSec=5
+
+# Read-only service: it downloads the export to a temp dir and serves it.
+# PrivateTmp gives it that temp dir without letting it write anywhere else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
+UNITEOF
+
+systemctl daemon-reload
+systemctl enable --now edgar-serving.service
+}
+
+# --- HTTPS ------------------------------------------------------------------
+# Only when a domain is configured. Caddy is chosen over nginx+certbot because
+# automatic certificate issue AND renewal is its default behaviour: the whole
+# configuration is the hostname and one reverse_proxy line, with no cron job to
+# forget and no renewal that silently lapses a year later.
+#
+# Streamlit sits on 127.0.0.1 behind it. It speaks websockets, which is why the
+# proxy needs no special config here (Caddy upgrades them by default) but does
+# need to be a real proxy rather than a redirect.
+if [ -n "${domain}" ]; then
+  dnf -y install 'dnf-command(copr)'
+  dnf -y copr enable @caddy/caddy epel-9-$(uname -m) || true
+  dnf -y install caddy || {
+    # COPR is unavailable on some AL2023 images; fall back to the official binary.
+    CADDY_VER=2.8.4
+    curl -fsSL "https://github.com/caddyserver/caddy/releases/download/v$${CADDY_VER}/caddy_$${CADDY_VER}_linux_arm64.tar.gz" \
+      | tar -xz -C /usr/local/bin caddy
+    useradd --system --home-dir /var/lib/caddy --create-home --shell /sbin/nologin caddy || true
+    cat >/etc/systemd/system/caddy.service <<'CADDYUNIT'
+[Unit]
+Description=Caddy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=caddy
+Group=caddy
+ExecStart=/usr/local/bin/caddy run --environ --config /etc/caddy/Caddyfile
+ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile --force
+Restart=on-abnormal
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target
+CADDYUNIT
+  }
+
+  # One hostname, two services. Repo 5 is the front door -- it is a full
+  # server-rendered site (companies, restatements, as-of, activity, plus /api)
+  # and is what a visitor should land on. The assistant lives under /chat.
+  #
+  # `handle`, NOT `handle_path`. handle_path strips the matched prefix, and
+  # Streamlit is told via --server.baseUrlPath that it is mounted at /chat, so
+  # it EXPECTS the prefix to arrive intact -- it builds its own asset and
+  # websocket URLs from it. Strip it and the page loads, then hangs forever on
+  # "connecting", because /chat/_stcore/stream never reaches the server that
+  # answers it. The two settings have to agree; this is the pair.
+  install -d /etc/caddy
+  cat >/etc/caddy/Caddyfile <<CADDYEOF
+${domain} {
+    handle /chat* {
+        reverse_proxy 127.0.0.1:8501
+    }
+    handle {
+        reverse_proxy 127.0.0.1:8055
+    }
+}
+CADDYEOF
+  chown -R caddy:caddy /etc/caddy 2>/dev/null || true
+
+  systemctl daemon-reload
+  systemctl enable --now caddy
+fi
+
+# Repo 5 last, and never fatally. Caddy is already serving the chatbot by this
+# point, so whatever happens here the published HTTPS URL is up. A failure is
+# loud in /var/log/cloud-init-output.log but costs only the serving API.
+install_serving || echo "WARNING: repo 5 bootstrap failed; chatbot unaffected. See above for the failing command."

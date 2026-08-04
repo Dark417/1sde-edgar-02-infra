@@ -63,3 +63,25 @@ variable "vpc_id" {
   type        = string
   default     = ""
 }
+
+variable "chatbot_domain" {
+  description = "Hostname to serve over HTTPS, e.g. edgar.example.com. Empty means plain HTTP on 8501 and no certificate. An A record for this name must already point at the Elastic IP before apply -- Caddy proves ownership over HTTP-01 at boot and fails if DNS is not live."
+  type        = string
+  default     = ""
+}
+
+variable "serving_repo_url" {
+  description = "Public git URL for repo 5, cloned onto the host at boot."
+  type        = string
+  default     = "https://github.com/Dark417/1sde-edgar-05-serving.git"
+}
+
+variable "contracts_repo" {
+  description = <<-EOT
+    owner/name of repo 1, used to fetch the pinned contracts wheel from its
+    GitHub release. The package is not on PyPI, so pip cannot resolve the pin
+    without it.
+  EOT
+  type        = string
+  default     = "Dark417/1sde-edgar-01-contracts"
+}

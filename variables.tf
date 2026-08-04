@@ -207,3 +207,9 @@ variable "chatbot_allowed_cidrs" {
   type        = list(string)
   default     = ["0.0.0.0/0"]
 }
+
+variable "chatbot_domain" {
+  description = "Hostname served over HTTPS. Its A record must already point at the Elastic IP; Caddy proves ownership over HTTP-01 at boot."
+  type        = string
+  default     = ""
+}

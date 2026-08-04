@@ -50,3 +50,30 @@ contracts_version = "1.4.1"
 # Note the two schedules are independent -- there is no completion signal between them.
 # The pipeline reads whatever is in the landing zone at its own trigger time.
 schedule_enabled = true
+
+# The chatbot host is real and running, so the committed config says so. It was
+# created from a gitignored local tfvars, which meant every plan run from a
+# different checkout wanted to destroy it -- a plan showing "10 to destroy"
+# against a live instance is exactly the drift the destroy-guard exists to catch.
+# ~$6.13/month for a t4g.micro; the public IPv4 is billed either way.
+deploy_chatbot = true
+
+# The public hostname, served over HTTPS by Caddy with a Let's Encrypt cert it
+# obtains and renews itself. This MUST be committed, not passed as a one-off
+# `-var`: the domain is an input to user_data, and user_data_replace_on_change
+# is true, so an apply that omits it does not merely drift -- it replaces the
+# instance with one that has no Caddy, drops the 80/443 rules, and puts a URL
+# that has been shared publicly permanently offline. Same drift argument as
+# deploy_chatbot above, with a worse failure mode.
+#
+# Not a secret: it is the link the demo is posted under. The A record for it
+# must point at the Elastic IP before any apply, because Caddy proves ownership
+# over HTTP-01 at boot and fails if DNS is not already live.
+chatbot_domain = "edgar.xiaoxiaolei.com"
+
+# Repo 5's API and UI are co-hosted on that same instance rather than given
+# their own. It already holds the two permissions repo 5 needs -- s3:GetObject
+# on the serving prefix and ssm:GetParameter -- so a second host would have paid
+# $5-7/month to duplicate an IAM role and sit idle. The cost is that repo 5's
+# uptime is coupled to this box; repo 5 is containerised, so moving it out later
+# is a runtime change, not a rewrite.
