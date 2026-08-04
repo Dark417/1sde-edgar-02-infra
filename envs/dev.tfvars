@@ -41,5 +41,12 @@ landing_mode = "volume"
 # it, so a stale pin here is an install failure everywhere downstream.
 contracts_version = "1.4.1"
 
-# Rule 4. Stays false until repo 4 has run successfully by hand (§9.9).
-schedule_enabled = false
+# Rule 4 satisfied: repo 4 has now run end to end by hand against logical_date
+# 2026-07-31 -- bronze, silver, gold and serving_export all SUCCESS, and the export
+# published to s3://edgar-lake-serving. Repo 4's bundle schedule is UNPAUSED to match,
+# so the daily chain runs unattended: this lands the day's filings at 06:00 UTC and the
+# pipeline picks them up.
+#
+# Note the two schedules are independent -- there is no completion signal between them.
+# The pipeline reads whatever is in the landing zone at its own trigger time.
+schedule_enabled = true
