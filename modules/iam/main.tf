@@ -163,7 +163,18 @@ data "aws_iam_policy_document" "terraform" {
       "logs:*",
       "ssm:*",
       "iam:*",
-      "ec2:Describe*",
+      # ec2:* rather than Describe*, and this is the second time this exact
+      # shape has bitten. The chatbot host -- instance, security group, elastic
+      # IP -- was created locally by an administrator role, so nothing exercised
+      # CI's policy against it until an apply tried to REPLACE the instance and
+      # was refused ec2:TerminateInstances and ec2:RevokeSecurityGroupIngress.
+      # Read-only EC2 was enough to plan and enough to create nothing, so it
+      # looked correct right up until the first destroy.
+      #
+      # Wildcard is consistent with s3/ecs/ecr/iam above and justified by the
+      # same note: a provisioning role cannot be scoped to ARNs that do not
+      # exist until it creates them.
+      "ec2:*",
       # GetResourcePolicy is not optional despite looking like it. The
       # `aws_secretsmanager_secret` DATA SOURCE reads the secret's resource
       # policy as part of a normal read, so every plan needs it. Its absence was
