@@ -5,7 +5,7 @@ output "anthropic_api_key_secret_arn" {
 
 output "chatbot_url" {
   description = "Where the demo is reachable. Null until deploy_chatbot = true."
-  value       = var.deploy_chatbot ? "http://${aws_instance.chatbot[0].public_ip}:8501" : null
+  value       = var.deploy_chatbot ? "http://${aws_eip.chatbot[0].public_ip}:8501" : null
 }
 
 output "chatbot_instance_id" {

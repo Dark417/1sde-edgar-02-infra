@@ -189,3 +189,22 @@ resource "aws_instance" "chatbot" {
 
   tags = merge(var.tags, { Name = "edgar-chatbot" })
 }
+
+# --- stable address --------------------------------------------------------
+# An Elastic IP costs NOTHING extra here. Since Feb 2024 every public IPv4 is
+# billed at $0.005/hr whether it is auto-assigned or elastic, and the instance
+# already carries an auto-assigned one -- verified against the pricing API:
+# both USE2-PublicIPv4:InUseAddress and :IdleAddress are $0.005/hr.
+#
+# What it buys is a link that survives a stop/start. Without it the address is
+# reallocated on every restart, which silently breaks a URL already posted
+# somewhere public.
+#
+# The one trap: an EIP left allocated after the instance is gone keeps billing
+# as :IdleAddress. Destroying with `deploy_chatbot = false` releases it.
+resource "aws_eip" "chatbot" {
+  count    = var.deploy_chatbot ? 1 : 0
+  instance = aws_instance.chatbot[0].id
+  domain   = "vpc"
+  tags     = merge(var.tags, { Name = "edgar-chatbot" })
+}
