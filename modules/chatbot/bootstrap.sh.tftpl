@@ -1,0 +1,80 @@
+#!/bin/bash
+# Boot the EDGAR chatbot host. Runs once, as root, on first boot.
+#
+# No credentials appear anywhere in this file. The instance profile supplies
+# them from instance metadata, which is why this is EC2 and not Lightsail.
+#
+# Everything is logged to /var/log/cloud-init-output.log; if the UI never comes
+# up, that file is the first thing to read.
+set -euxo pipefail
+
+APP_DIR=/opt/finchat
+SERVICE_USER=finchat
+
+dnf -y update
+dnf -y install python3.11 python3.11-pip git
+
+id -u "$SERVICE_USER" &>/dev/null || useradd --system --home-dir "$APP_DIR" --shell /sbin/nologin "$SERVICE_USER"
+
+git clone --depth 1 "${repo_url}" "$APP_DIR"
+chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR"
+
+cd "$APP_DIR"
+python3.11 -m venv .venv
+# Runtime extras only. pyarrow is NOT needed here: it writes Parquet in the
+# export script, and DuckDB reads Parquet natively. google-adk is skipped too --
+# it is +95 MB and the default runner is langgraph.
+.venv/bin/pip install --no-cache-dir -q --upgrade pip
+.venv/bin/pip install --no-cache-dir -q .
+
+# Config by environment, not SSM, for the values that never change per boot.
+# config.resolve() is env-first, so this short-circuits the SSM read; the kill
+# switch and budget still come from SSM at runtime so they stay operable.
+cat >/etc/finchat.env <<ENVEOF
+AWS_REGION=${region}
+AWS_DEFAULT_REGION=${region}
+DEPLOY_ENV=cloud
+SERVING_PREFIX=${serving_prefix}
+DATA_DIR=$APP_DIR/data
+BEDROCK_MODEL_ID=${model_main}
+BEDROCK_MODEL_CHEAP=${model_cheap}
+TOKEN_BUDGET_DAY=${token_budget}
+PYTHONPATH=$APP_DIR/src
+ENVEOF
+chmod 0644 /etc/finchat.env
+
+install -d -o "$SERVICE_USER" -g "$SERVICE_USER" "$APP_DIR/data"
+
+cat >/etc/systemd/system/finchat.service <<'UNITEOF'
+[Unit]
+Description=EDGAR lakehouse chatbot (Streamlit)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=finchat
+WorkingDirectory=/opt/finchat
+EnvironmentFile=/etc/finchat.env
+ExecStart=/opt/finchat/.venv/bin/streamlit run app.py \
+  --server.port 8501 \
+  --server.address 0.0.0.0 \
+  --server.headless true \
+  --browser.gatherUsageStats false
+Restart=always
+RestartSec=5
+
+# The host holds no secrets, but a Streamlit process has no business writing
+# outside its own directory either.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/finchat/data
+
+[Install]
+WantedBy=multi-user.target
+UNITEOF
+
+systemctl daemon-reload
+systemctl enable --now finchat.service
