@@ -91,6 +91,16 @@ systemctl enable --now finchat.service
 # demo scale that is acceptable. If the two ever need to fail independently,
 # repo 5 is already containerised -- move it to its own runtime and delete this
 # block, nothing else changes.
+#
+# It is a FUNCTION, invoked at the very end after Caddy is up, and its failure is
+# swallowed on purpose. This script runs under `set -e`, and everything below
+# reaches the network: a git clone, a GitHub release download, a pip install. If
+# any of that fails inline, the script aborts before the HTTPS section and the
+# instance comes up with no certificate -- so a bad wheel pin in repo 5 would
+# take the published chatbot URL offline. Repo 5 is the addition here; the
+# chatbot is the thing already being shown. The optional part must not be able
+# to break the load-bearing one.
+install_serving() {
 SERVING_DIR=/opt/edgar-serving
 SERVING_USER=edgarserving
 
@@ -144,6 +154,7 @@ UNITEOF
 
 systemctl daemon-reload
 systemctl enable --now edgar-serving.service
+}
 
 # --- HTTPS ------------------------------------------------------------------
 # Only when a domain is configured. Caddy is chosen over nginx+certbot because
@@ -193,3 +204,8 @@ CADDYEOF
   systemctl daemon-reload
   systemctl enable --now caddy
 fi
+
+# Repo 5 last, and never fatally. Caddy is already serving the chatbot by this
+# point, so whatever happens here the published HTTPS URL is up. A failure is
+# loud in /var/log/cloud-init-output.log but costs only the serving API.
+install_serving || echo "WARNING: repo 5 bootstrap failed; chatbot unaffected. See above for the failing command."

@@ -138,8 +138,16 @@ resource "aws_security_group" "chatbot" {
 # Repo 5's API and UI. Same allow-list as the chatbot: this is a demo host, and
 # a read-only service over public SEC data still has no reason to face the whole
 # internet.
+#
+# NOT gated on chatbot_domain, unlike the 8501 rule below. Caddy terminates TLS
+# for the chatbot only -- its Caddyfile has one reverse_proxy line, to 8501 --
+# so gating this rule the same way would bind repo 5 to loopback behind a proxy
+# that has no route to it, leaving it reachable by nobody. It is served as plain
+# HTTP on its own port, which is what it was before the chatbot had a domain.
+# Giving it TLS too means either a second A record or a path prefix that repo 5
+# would have to generate its URLs for; neither is repo 2's call to make.
 resource "aws_vpc_security_group_ingress_rule" "serving_ui" {
-  for_each = var.deploy_chatbot && var.chatbot_domain == "" ? toset(var.chatbot_allowed_cidrs) : toset([])
+  for_each = var.deploy_chatbot ? toset(var.chatbot_allowed_cidrs) : toset([])
 
   security_group_id = aws_security_group.chatbot[0].id
   description       = "EDGAR serving API and UI"
@@ -149,6 +157,11 @@ resource "aws_vpc_security_group_ingress_rule" "serving_ui" {
   ip_protocol       = "tcp"
 }
 
+# Only in the no-domain case. Once a domain is set Streamlit binds 127.0.0.1 and
+# 8501 answers nobody from outside, so keeping the rule would leave a port open
+# to the whole internet that grants no access -- an inbound rule that reads as
+# reachable but is not is worse than no rule, because the next reader trusts it.
+# The two paths are mutually exclusive by construction.
 resource "aws_vpc_security_group_ingress_rule" "chatbot_ui" {
   for_each = var.deploy_chatbot && var.chatbot_domain == "" ? toset(var.chatbot_allowed_cidrs) : toset([])
 
@@ -218,12 +231,13 @@ resource "aws_instance" "chatbot" {
     # reachable; without a domain it must bind all interfaces to be usable.
     streamlit_bind = var.chatbot_domain != "" ? "127.0.0.1" : "0.0.0.0"
 
-    # Repo 5 is co-hosted here. Same reasoning as streamlit_bind: loopback when
-    # Caddy fronts it, all interfaces when it must be reachable directly.
+    # Repo 5 is co-hosted here. Always all interfaces, unlike streamlit_bind:
+    # nothing proxies port 8055, so loopback would make it unreachable rather
+    # than protected. See the serving_ui rule above.
     serving_repo_url = var.serving_repo_url
     serving_bucket   = var.serving_bucket
     contracts_repo   = var.contracts_repo
-    serving_bind     = var.chatbot_domain != "" ? "127.0.0.1" : "0.0.0.0"
+    serving_bind     = "0.0.0.0"
   })
 
   tags = merge(var.tags, { Name = "edgar-chatbot" })

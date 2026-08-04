@@ -58,6 +58,19 @@ schedule_enabled = true
 # ~$6.13/month for a t4g.micro; the public IPv4 is billed either way.
 deploy_chatbot = true
 
+# The public hostname, served over HTTPS by Caddy with a Let's Encrypt cert it
+# obtains and renews itself. This MUST be committed, not passed as a one-off
+# `-var`: the domain is an input to user_data, and user_data_replace_on_change
+# is true, so an apply that omits it does not merely drift -- it replaces the
+# instance with one that has no Caddy, drops the 80/443 rules, and puts a URL
+# that has been shared publicly permanently offline. Same drift argument as
+# deploy_chatbot above, with a worse failure mode.
+#
+# Not a secret: it is the link the demo is posted under. The A record for it
+# must point at the Elastic IP before any apply, because Caddy proves ownership
+# over HTTP-01 at boot and fails if DNS is not already live.
+chatbot_domain = "edgar.xiaoxiaolei.com"
+
 # Repo 5's API and UI are co-hosted on that same instance rather than given
 # their own. It already holds the two permissions repo 5 needs -- s3:GetObject
 # on the serving prefix and ssm:GetParameter -- so a second host would have paid
