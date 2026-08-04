@@ -150,5 +150,12 @@ module "chatbot" {
   chat_model_main  = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
   chat_model_cheap = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 
+  # The always-on host. Off by default: it is the only line item in this repo
+  # that bills continuously (~$10.42/month), so turning the demo on is a
+  # deliberate act, not a side effect of an apply.
+  deploy_chatbot        = var.deploy_chatbot
+  chatbot_allowed_cidrs = var.chatbot_allowed_cidrs
+  serving_bucket        = local.serving_bucket
+
   tags = local.tags
 }

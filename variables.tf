@@ -195,3 +195,15 @@ variable "ia_transition_days" {
   type        = number
   default     = 90
 }
+
+variable "deploy_chatbot" {
+  description = "Create the always-on chatbot host (~$10.42/month). False keeps repo 6's footprint to config only."
+  type        = bool
+  default     = false
+}
+
+variable "chatbot_allowed_cidrs" {
+  description = "CIDRs allowed to reach the chatbot UI on 8501."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}

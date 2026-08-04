@@ -48,3 +48,8 @@ output "schedule_state" {
   description = "ENABLED/DISABLED. Must read DISABLED until repo 4 has run by hand."
   value       = module.schedule.state
 }
+
+output "chatbot_url" {
+  description = "Public URL of the chatbot demo. Null unless deploy_chatbot = true."
+  value       = module.chatbot.chatbot_url
+}
