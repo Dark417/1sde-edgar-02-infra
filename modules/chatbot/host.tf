@@ -154,15 +154,16 @@ resource "aws_security_group" "chatbot" {
 # a read-only service over public SEC data still has no reason to face the whole
 # internet.
 #
-# NOT gated on chatbot_domain, unlike the 8501 rule below. Caddy terminates TLS
-# for the chatbot only -- its Caddyfile has one reverse_proxy line, to 8501 --
-# so gating this rule the same way would bind repo 5 to loopback behind a proxy
-# that has no route to it, leaving it reachable by nobody. It is served as plain
-# HTTP on its own port, which is what it was before the chatbot had a domain.
-# Giving it TLS too means either a second A record or a path prefix that repo 5
-# would have to generate its URLs for; neither is repo 2's call to make.
+# Gated on chatbot_domain exactly like the 8501 rule, and for the same reason:
+# Caddy now routes `/` to repo 5 and `/chat` to the chatbot, so with a domain
+# set repo 5 is served over TLS on 443 and 8055 is loopback-only. Leaving this
+# rule open would expose a plaintext second door to the same content.
+#
+# It was briefly ungated, correctly, during the window when Caddy proxied only
+# 8501 -- gating it then would have bound repo 5 to loopback behind a proxy with
+# no route to it. The rule and the Caddyfile have to move together.
 resource "aws_vpc_security_group_ingress_rule" "serving_ui" {
-  for_each = var.deploy_chatbot ? toset(var.chatbot_allowed_cidrs) : toset([])
+  for_each = var.deploy_chatbot && var.chatbot_domain == "" ? toset(var.chatbot_allowed_cidrs) : toset([])
 
   security_group_id = aws_security_group.chatbot[0].id
   description       = "EDGAR serving API and UI"
@@ -242,17 +243,26 @@ resource "aws_instance" "chatbot" {
     model_cheap    = var.chat_model_cheap
     token_budget   = var.chat_token_budget_day
     domain         = var.chatbot_domain
-    # Behind Caddy, Streamlit binds loopback so 8501 is not separately
-    # reachable; without a domain it must bind all interfaces to be usable.
+    # Behind Caddy, both apps bind loopback so neither port is separately
+    # reachable; without a domain each must bind all interfaces to be usable.
     streamlit_bind = var.chatbot_domain != "" ? "127.0.0.1" : "0.0.0.0"
 
-    # Repo 5 is co-hosted here. Always all interfaces, unlike streamlit_bind:
-    # nothing proxies port 8055, so loopback would make it unreachable rather
-    # than protected. See the serving_ui rule above.
+    # Where the assistant is mounted. Must match the Caddy `handle /chat*`
+    # route: Streamlit generates its own asset and websocket URLs from this, so
+    # a mismatch between the two produces a page that loads and never connects.
+    # Empty when there is no domain, i.e. Streamlit owns the whole port.
+    streamlit_base_path = var.chatbot_domain != "" ? "chat" : ""
+
     serving_repo_url = var.serving_repo_url
     serving_bucket   = var.serving_bucket
     contracts_repo   = var.contracts_repo
-    serving_bind     = "0.0.0.0"
+    serving_bind     = var.chatbot_domain != "" ? "127.0.0.1" : "0.0.0.0"
+
+    # The two cross-links, both empty unless a domain joins the services under
+    # one origin. Without one they run on separate ports with no shared path,
+    # and each app renders no link rather than a broken one.
+    chat_url = var.chatbot_domain != "" ? "/chat/" : ""
+    site_url = var.chatbot_domain != "" ? "https://${var.chatbot_domain}/" : ""
   })
 
   tags = merge(var.tags, { Name = "edgar-chatbot" })

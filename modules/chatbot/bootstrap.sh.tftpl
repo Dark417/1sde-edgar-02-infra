@@ -40,6 +40,9 @@ BEDROCK_MODEL_ID=${model_main}
 BEDROCK_MODEL_CHEAP=${model_cheap}
 TOKEN_BUDGET_DAY=${token_budget}
 PYTHONPATH=$APP_DIR/src
+# The way back out of the assistant, to repo 5's site. Only set when the two
+# share a hostname; empty renders no link rather than a broken one.
+LINK_SITE=${site_url}
 ENVEOF
 chmod 0644 /etc/finchat.env
 
@@ -59,6 +62,7 @@ EnvironmentFile=/etc/finchat.env
 ExecStart=/opt/finchat/.venv/bin/streamlit run app.py \
   --server.port 8501 \
   --server.address ${streamlit_bind} \
+  --server.baseUrlPath "${streamlit_base_path}" \
   --server.headless true \
   --browser.gatherUsageStats false
 Restart=always
@@ -132,6 +136,9 @@ cat >/etc/edgar-serving.env <<ENVEOF
 AWS_REGION=${region}
 SERVING_BUCKET=${serving_bucket}
 SERVING_REFRESH_SECONDS=300
+# Renders the "Ask" nav item pointing at the assistant. Empty when there is no
+# domain, because then the two are on separate ports and no shared path exists.
+CHAT_URL=${chat_url}
 ENVEOF
 chmod 0644 /etc/edgar-serving.env
 
@@ -202,10 +209,25 @@ WantedBy=multi-user.target
 CADDYUNIT
   }
 
+  # One hostname, two services. Repo 5 is the front door -- it is a full
+  # server-rendered site (companies, restatements, as-of, activity, plus /api)
+  # and is what a visitor should land on. The assistant lives under /chat.
+  #
+  # `handle`, NOT `handle_path`. handle_path strips the matched prefix, and
+  # Streamlit is told via --server.baseUrlPath that it is mounted at /chat, so
+  # it EXPECTS the prefix to arrive intact -- it builds its own asset and
+  # websocket URLs from it. Strip it and the page loads, then hangs forever on
+  # "connecting", because /chat/_stcore/stream never reaches the server that
+  # answers it. The two settings have to agree; this is the pair.
   install -d /etc/caddy
   cat >/etc/caddy/Caddyfile <<CADDYEOF
 ${domain} {
-    reverse_proxy 127.0.0.1:8501
+    handle /chat* {
+        reverse_proxy 127.0.0.1:8501
+    }
+    handle {
+        reverse_proxy 127.0.0.1:8055
+    }
 }
 CADDYEOF
   chown -R caddy:caddy /etc/caddy 2>/dev/null || true
