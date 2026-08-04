@@ -119,6 +119,21 @@ resource "aws_iam_role_policy" "chatbot_host" {
   policy = data.aws_iam_policy_document.chatbot_host.json
 }
 
+# Session Manager. Added after the host failed at startup with a message the UI
+# truncated, and there was no way to read the traceback: no SSH rule, no session
+# access, so the only diagnostic move left was to replace the instance and hope
+# the next boot said more. "Rebuild rather than log in" is a fine rule for
+# changing the host; it is not a substitute for being able to read its logs.
+#
+# This opens no port. The agent dials out to the SSM endpoints over the egress
+# rule that already exists, so the inbound posture is unchanged -- access is
+# gated by IAM on who may call StartSession, not by a listening service.
+resource "aws_iam_role_policy_attachment" "chatbot_ssm" {
+  count      = var.deploy_chatbot ? 1 : 0
+  role       = aws_iam_role.chatbot[0].name
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
 resource "aws_iam_instance_profile" "chatbot" {
   count = var.deploy_chatbot ? 1 : 0
   name  = "edgar-chatbot-host"
