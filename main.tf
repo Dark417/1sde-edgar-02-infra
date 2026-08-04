@@ -155,6 +155,7 @@ module "chatbot" {
   # deliberate act, not a side effect of an apply.
   deploy_chatbot        = var.deploy_chatbot
   chatbot_allowed_cidrs = var.chatbot_allowed_cidrs
+  chatbot_domain        = var.chatbot_domain
   serving_bucket        = local.serving_bucket
 
   tags = local.tags

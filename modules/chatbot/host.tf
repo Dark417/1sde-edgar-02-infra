@@ -135,14 +135,42 @@ resource "aws_security_group" "chatbot" {
   tags        = var.tags
 }
 
-resource "aws_vpc_security_group_ingress_rule" "chatbot_ui" {
-  for_each = var.deploy_chatbot ? toset(var.chatbot_allowed_cidrs) : toset([])
+# Repo 5's API and UI. Same allow-list as the chatbot: this is a demo host, and
+# a read-only service over public SEC data still has no reason to face the whole
+# internet.
+resource "aws_vpc_security_group_ingress_rule" "serving_ui" {
+  for_each = var.deploy_chatbot && var.chatbot_domain == "" ? toset(var.chatbot_allowed_cidrs) : toset([])
 
   security_group_id = aws_security_group.chatbot[0].id
-  description       = "Streamlit UI"
+  description       = "EDGAR serving API and UI"
+  cidr_ipv4         = each.value
+  from_port         = 8055
+  to_port           = 8055
+  ip_protocol       = "tcp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "chatbot_ui" {
+  for_each = var.deploy_chatbot && var.chatbot_domain == "" ? toset(var.chatbot_allowed_cidrs) : toset([])
+
+  security_group_id = aws_security_group.chatbot[0].id
+  description       = "Streamlit UI (plain HTTP, no domain configured)"
   cidr_ipv4         = each.value
   from_port         = 8501
   to_port           = 8501
+  ip_protocol       = "tcp"
+}
+
+# 80 and 443 exist only when a domain is configured. 80 is not decorative:
+# Caddy needs it reachable for the ACME HTTP-01 challenge, and afterwards it
+# serves the redirect to HTTPS.
+resource "aws_vpc_security_group_ingress_rule" "chatbot_https" {
+  for_each = var.deploy_chatbot && var.chatbot_domain != "" ? toset(["80", "443"]) : toset([])
+
+  security_group_id = aws_security_group.chatbot[0].id
+  description       = "HTTPS (and ACME challenge on 80)"
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = tonumber(each.value)
+  to_port           = tonumber(each.value)
   ip_protocol       = "tcp"
 }
 
@@ -185,6 +213,17 @@ resource "aws_instance" "chatbot" {
     model_main     = var.chat_model_main
     model_cheap    = var.chat_model_cheap
     token_budget   = var.chat_token_budget_day
+    domain         = var.chatbot_domain
+    # Behind Caddy, Streamlit binds loopback so 8501 is not separately
+    # reachable; without a domain it must bind all interfaces to be usable.
+    streamlit_bind = var.chatbot_domain != "" ? "127.0.0.1" : "0.0.0.0"
+
+    # Repo 5 is co-hosted here. Same reasoning as streamlit_bind: loopback when
+    # Caddy fronts it, all interfaces when it must be reachable directly.
+    serving_repo_url = var.serving_repo_url
+    serving_bucket   = var.serving_bucket
+    contracts_repo   = var.contracts_repo
+    serving_bind     = var.chatbot_domain != "" ? "127.0.0.1" : "0.0.0.0"
   })
 
   tags = merge(var.tags, { Name = "edgar-chatbot" })

@@ -50,3 +50,17 @@ contracts_version = "1.4.1"
 # Note the two schedules are independent -- there is no completion signal between them.
 # The pipeline reads whatever is in the landing zone at its own trigger time.
 schedule_enabled = true
+
+# The chatbot host is real and running, so the committed config says so. It was
+# created from a gitignored local tfvars, which meant every plan run from a
+# different checkout wanted to destroy it -- a plan showing "10 to destroy"
+# against a live instance is exactly the drift the destroy-guard exists to catch.
+# ~$6.13/month for a t4g.micro; the public IPv4 is billed either way.
+deploy_chatbot = true
+
+# Repo 5's API and UI are co-hosted on that same instance rather than given
+# their own. It already holds the two permissions repo 5 needs -- s3:GetObject
+# on the serving prefix and ssm:GetParameter -- so a second host would have paid
+# $5-7/month to duplicate an IAM role and sit idle. The cost is that repo 5's
+# uptime is coupled to this box; repo 5 is containerised, so moving it out later
+# is a runtime change, not a rewrite.
